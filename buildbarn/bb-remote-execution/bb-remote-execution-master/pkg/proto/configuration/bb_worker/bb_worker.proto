@@ -1,0 +1,263 @@
+syntax = "proto3";
+
+package buildbarn.configuration.bb_worker;
+
+import "build/bazel/remote/execution/v2/remote_execution.proto";
+import "google/protobuf/duration.proto";
+import "pkg/proto/configuration/blobstore/blobstore.proto";
+import "pkg/proto/configuration/eviction/eviction.proto";
+import "pkg/proto/configuration/filesystem/filesystem.proto";
+import "pkg/proto/configuration/filesystem/virtual/virtual.proto";
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/resourceusage/resourceusage.proto";
+
+option go_package = "github.com/buildbarn/bb-remote-execution/pkg/proto/configuration/bb_worker";
+
+message ApplicationConfiguration {
+  // Configuration for blob storage.
+  buildbarn.configuration.blobstore.BlobstoreConfiguration blobstore = 1;
+
+  // URL of the Buildbarn Browser, shown to the user upon build completion.
+  string browser_url = 2;
+
+  // Maximum Protobuf message size to unmarshal.
+  int64 maximum_message_size_bytes = 6;
+
+  // Endpoint of the scheduler to which to connect.
+  buildbarn.configuration.grpc.ClientConfiguration scheduler = 8;
+
+  // Was 'http_listen_address'. This option has been moved to
+  // 'global.diagnostics_http_listen_address'.
+  reserved 9;
+
+  // Maximum number of directory listings to keep in memory.
+  uint64 maximum_memory_cached_directories = 12;
+
+  // Was 'instance_name'. This option has been renamed to
+  // 'RunnerConfiguration.instance_name_prefix'.
+  reserved 16;
+
+  // Was 'file_pool_directory_path'. This option has been renamed to
+  // 'file_pool.directory_path'.
+  reserved 18;
+
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 19;
+
+  // Directories on the system in which builds take place.
+  repeated BuildDirectoryConfiguration build_directories = 20;
+
+  // Was 'file_pool_block_device'. This option has been renamed to
+  // 'file_pool.block_device'.
+  reserved 21;
+
+  // Location where temporary files that are created by bb_worker are
+  // stored. Not all configurations of bb_worker require this to be set.
+  // When left unset, any attempt to allocate temporary files will fail.
+  buildbarn.configuration.filesystem.FilePoolConfiguration file_pool = 22;
+
+  // Configurations for any CompletedActionLoggingServers that bb_worker will
+  // forward all CompletedActions to along with their REv2 build metadata.
+  // This provides a means for aggregating and analyzing the data from builds
+  // to potentially identify computationally expensive targets, estimate the
+  // approximate cost of builds, or uncover underlying patterns in build
+  // behavior. No CompletedActions will be streamed if this option is left
+  // empty. See
+  // https://github.com/buildbarn/bb-adrs/blob/master/0006-operation-logging-and-monetary-resource-usage.md
+  // for more details around the Completed Action Logger service.
+  repeated CompletedActionLoggingConfiguration completed_action_loggers = 23;
+
+  // The maximum number of concurrent writes to issue against the
+  // Content Addressable Storage (CAS). This limit applied to the worker
+  // process as a whole; not individual worker threads.
+  int64 output_upload_concurrency = 24;
+}
+
+message BuildDirectoryConfiguration {
+  oneof backend {
+    // Perform builds in a native directory on the system. The advantage
+    // of this setup is that build actions can run with little overhead.
+    // The disadvantage is that build actions with large input roots may
+    // take long to initialize.
+    NativeBuildDirectoryConfiguration native = 1;
+
+    // Perform builds in a virtual mount (e.g., FUSE) that is managed by
+    // this process. The mount instantiates build input roots lazily and
+    // loads input files on demand. This means that build actions can be
+    // started instantaneously, downloading data gradually.
+    //
+    // The virtual file system may impose a larger performance overhead
+    // for build actions that are I/O intensive. To provide adequate
+    // performance, it is important that a Content Addressable Storage
+    // backend is used that supports fast random access to blobs. It is
+    // suggested that workers use ReadCachingBlobAccess in combination
+    // with LocalBlobAccess to achieve this. When LocalBlobAcces is
+    // backed by a block device, 'disable_integrity_checking' must be
+    // enabled.
+    VirtualBuildDirectoryConfiguration virtual = 2;
+  }
+
+  // Runners to which to send requests to invoke build action commands.
+  repeated RunnerConfiguration runners = 3;
+}
+
+message NativeBuildDirectoryConfiguration {
+  // Directory where builds take place.
+  string build_directory_path = 1;
+
+  // Directory where build input files are cached.
+  string cache_directory_path = 2;
+
+  // Maximum number of files in the cache.
+  uint64 maximum_cache_file_count = 3;
+
+  // Maximum total size of the cache in bytes.
+  int64 maximum_cache_size_bytes = 4;
+
+  // The cache replacement policy to use for the input file cache. For
+  // most setups, it is advised that RANDOM_REPLACEMENT is used, for the
+  // reason that it still performs adequately in worst-case scenarios.
+  //
+  // There are certain workloads that may require the use of
+  // LEAST_RECENTLY_USED. For example, Clang's implementation of
+  // '#pragma once' requires that identical source files exposed under
+  // different paths have identical inode numbers. The
+  // RANDOM_REPLACEMENT algorithm cannot guarantee this property, while
+  // LEAST_RECENTLY_USED can, assuming the cache size is sufficient.
+  buildbarn.configuration.eviction.CacheReplacementPolicy
+      cache_replacement_policy = 5;
+}
+
+message VirtualBuildDirectoryConfiguration {
+  // Options for mounting the virtual file system at a given path.
+  buildbarn.configuration.filesystem.virtual.MountConfiguration mount = 1;
+
+  // Because the virtual file system only loads input root contents from
+  // the Content Addressable Storage (CAS) lazily, build actions may
+  // block during execution. To prevent these delays from causing
+  // spurious test timeouts, this implementation is capable of
+  // compensating the execution timeout of actions based on storage
+  // latency observed.
+  //
+  // To prevent build actions from abusing this system (i.e., extending
+  // the execution timeout indefinitely by accessing files that are
+  // known to be slow), this option can be used to specify the maximum
+  // amount of time the build action is permitted to run in excess of
+  // the originally specified execution timeout.
+  //
+  // Recommended value: 3600s
+  google.protobuf.Duration maximum_execution_timeout_compensation = 2;
+
+  // POSIX doesn't guarantee that readdir() returns elements in any
+  // particular order. This is a common source of irreproducibility in
+  // builds. Because most file systems behave deterministically, it is
+  // typically hard to discover these problems without using multiple
+  // operating systems or file system types.
+  //
+  // Enabling this option causes the virtual file system to populate
+  // input root directories in random order, making it easier to detect
+  // irreproducible build actions. Disabling this option causes input
+  // root directories to be populated in alphabetic order, which reduces
+  // storage usage for build actions that are known to be
+  // irreproducible.
+  bool shuffle_directory_listings = 3;
+
+  // When set, hide files from directory listings that match a given
+  // regular expression. The presence of hidden files will not cause
+  // ENOTEMPTY to be returned upon directory removal. There are various
+  // use cases for this option:
+  //
+  // - On macOS, this feature can be used to prevent capturing of ._*
+  //   (AppleDouble) files.
+  //
+  // - NFSv4 clients may delay unlink() operations, ensuring that opened
+  //   files remain accessible. To prevent these files from being in the
+  //   way when creating a new file with the same name, clients will
+  //   rename the old file to .nfs*. This is called a "silly rename":
+  //   https://linux-nfs.org/wiki/index.php/Server-side_silly_rename.
+  //   This option can be used to prevent ENOTEMPTY errors when removing
+  //   directories containing one or more silly renamed files.
+  //
+  // Recommended value:
+  // - macOS: ^\._|^\.nfs\.[0-9a-f]{8}\.[0-9a-f]{4}$
+  // - Other platforms: unset
+  string hidden_files_pattern = 4;
+}
+
+message RunnerConfiguration {
+  // GRPC endpoint to which to connect.
+  buildbarn.configuration.grpc.ClientConfiguration endpoint = 1;
+
+  // Number of actions to run concurrently on this runner.
+  uint64 concurrency = 2;
+
+  // The prefix of the instance name for which requests from clients
+  // should be routed to this worker.
+  string instance_name_prefix = 13;
+
+  // Platform properties that need to be reported to the scheduler.
+  build.bazel.remote.execution.v2.Platform platform = 3;
+
+  // The size of this worker in terms of CPU count and memory size. When
+  // all workers of this platform have the same size, it is sufficient
+  // to leave this field set to zero.
+  uint32 size_class = 12;
+
+  // Was 'default_execution_timeout'. This value now needs to be set in
+  // bb_scheduler's configuration.
+  reserved 4;
+
+  // Was 'maximum_execution_timeout'. This value now needs to be set in
+  // bb_scheduler's configuration.
+  reserved 5;
+
+  // Maximum number of temporary files that may be generated by build
+  // actions during execution.
+  int64 maximum_file_pool_file_count = 6;
+
+  // Maximum total size of all temporary files that may be generated by
+  // build actions during execution.
+  int64 maximum_file_pool_size_bytes = 7;
+
+  // Additional fields that need to be attached to the ID of the worker,
+  // as announced to the scheduler. In addition to the labels specified,
+  // one named "thread" is added automatically in case concurrency > 1.
+  map<string, string> worker_id = 8;
+
+  // Device nodes to install in input root.
+  // e.g. ["null", "zero", "random"]
+  repeated string input_root_character_device_nodes = 9;
+
+  // Expenses that should be associated with build actions for this worker
+  // type. These could be representative of any recurring expenses such as
+  // cloud provider costs or on-prem hardware maintenance. If specified, a
+  // MonetaryResourceUsage message will be appended to each ActionResult's
+  // auxiliary_metadata.
+  map<string, buildbarn.resourceusage.MonetaryResourceUsage.Expense>
+      costs_per_second = 10;
+
+  // Additional environment variables to set inside the runner. These
+  // are overridden by environment variables specified in an action.
+  //
+  // For better hermeticity, is preferable to have the environment
+  // controlled by the build client, such as Bazel's --action_env.
+  // --action_env, however, has limited scope that makes it not useful
+  // in some scenarios: https://github.com/bazelbuild/bazel/issues/3320
+  map<string, string> environment_variables = 11;
+}
+
+message CompletedActionLoggingConfiguration {
+  // The gRPC endpoint to send all CompletedActions to.
+  buildbarn.configuration.grpc.ClientConfiguration client = 1;
+
+  // The maximum amount of queued CompletedActions that will be stored in the
+  // CompletedActionLogger's internal buffer. Once maximum_send_queue_size
+  // CompletedActions been have accumulated, new messages will be discarded
+  // to prevent the worker process from exhausting memory.
+  uint32 maximum_send_queue_size = 2;
+
+  // Prefix to add to the instance name that is set as part of
+  // CompletedAction messages that are sent to the logging server.
+  string add_instance_name_prefix = 3;
+}

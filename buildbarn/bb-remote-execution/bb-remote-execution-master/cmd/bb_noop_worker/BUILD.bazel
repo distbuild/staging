@@ -1,0 +1,40 @@
+load("@com_github_buildbarn_bb_storage//tools:container.bzl", "container_push_official")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "bb_noop_worker_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/buildbarn/bb-remote-execution/cmd/bb_noop_worker",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//pkg/builder",
+        "//pkg/filesystem",
+        "//pkg/proto/configuration/bb_noop_worker",
+        "//pkg/proto/remoteworker",
+        "@com_github_buildbarn_bb_storage//pkg/clock",
+        "@com_github_buildbarn_bb_storage//pkg/digest",
+        "@com_github_buildbarn_bb_storage//pkg/global",
+        "@com_github_buildbarn_bb_storage//pkg/random",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+    ],
+)
+
+go_binary(
+    name = "bb_noop_worker",
+    embed = [":bb_noop_worker_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_image(
+    name = "bb_noop_worker_container",
+    embed = [":bb_noop_worker_lib"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+)
+
+container_push_official(
+    name = "bb_noop_worker_container_push",
+    component = "bb-noop-worker",
+    image = ":bb_noop_worker_container",
+)

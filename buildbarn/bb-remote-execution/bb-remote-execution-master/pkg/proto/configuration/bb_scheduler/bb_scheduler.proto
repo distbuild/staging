@@ -1,0 +1,259 @@
+syntax = "proto3";
+
+package buildbarn.configuration.bb_scheduler;
+
+import "build/bazel/remote/execution/v2/remote_execution.proto";
+import "google/protobuf/duration.proto";
+import "pkg/proto/configuration/auth/auth.proto";
+import "pkg/proto/configuration/blobstore/blobstore.proto";
+import "pkg/proto/configuration/cloud/aws/aws.proto";
+import "pkg/proto/configuration/global/global.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/scheduler/scheduler.proto";
+
+option go_package = "github.com/buildbarn/bb-remote-execution/pkg/proto/configuration/bb_scheduler";
+
+message ApplicationConfiguration {
+  // Address on which to listen to expose the web UI.
+  //
+  // TODO: This web UI no longer needs to be integrated into
+  // bb_scheduler, as the underlying information can be exposed over
+  // gRPC using the 'build_queue_state_grpc_servers' option.
+  string admin_http_listen_address = 2;
+
+  // gRPC servers to spawn to listen for requests from clients
+  // (bb_storage or Bazel).
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      client_grpc_servers = 3;
+
+  // gRPC servers to spawn to listen for requests from bb_worker.
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      worker_grpc_servers = 4;
+
+  // URL of the Buildbarn Browser, linked to by the web UI.
+  string browser_url = 5;
+
+  // Configuration for blob storage.
+  buildbarn.configuration.blobstore.BlobAccessConfiguration
+      content_addressable_storage = 6;
+
+  // Maximum Protobuf message size to unmarshal.
+  int64 maximum_message_size_bytes = 7;
+
+  // Common configuration options that apply to all Buildbarn binaries.
+  buildbarn.configuration.global.Configuration global = 8;
+
+  // AWS Auto Scaling Group lifecycle hooks that should be used to
+  // automatically drain EC2 instances that are about to be terminated,
+  // and to delay their termination until all operations running on
+  // those systems have completed.
+  //
+  // More details:
+  // https://docs.aws.amazon.com/autoscaling/ec2/userguide/lifecycle-hooks.html
+  //
+  // TODO: This feature no longer needs to be integrated into
+  // bb_scheduler, as workers can be terminated over gRPC using the
+  // 'build_queue_state_grpc_servers' option.
+  repeated AWSASGLifecycleHookConfiguration aws_asg_lifecycle_hooks = 9;
+
+  // AWS access options and credentials.
+  buildbarn.configuration.cloud.aws.SessionConfiguration aws_session = 10;
+
+  // gRPC servers to spawn to expose the state of the build queue. This
+  // can be used to obtain access to the data shown in the web UI in a
+  // programmatic manner.
+  repeated buildbarn.configuration.grpc.ServerConfiguration
+      build_queue_state_grpc_servers = 11;
+
+  // Create platform queues that are always present, regardless of
+  // whether there are workers synchronizing against the scheduler.
+  //
+  // It is required to use this option to create platform queues that
+  // support multiple worker size classes.
+  repeated PredeclaredPlatformQueueConfiguration predeclared_platform_queues =
+      12;
+
+  // Was 'default_execution_timeout'. This setting is now configured
+  // through 'action_router'.
+  reserved 13;
+
+  // Was 'maximum_execution_timeout'. This setting is now configured
+  // through 'action_router'.
+  reserved 14;
+
+  // Authorization requirements to be enforced for Execute and WaitExecution
+  // requests.
+  buildbarn.configuration.auth.AuthorizerConfiguration execute_authorizer = 15;
+
+  // The policy for routing actions.
+  //
+  // Before the scheduler is capable of enqueueing an action, it must
+  // extract some properties from the incoming execution request:
+  //
+  // - The platform on which the action has to run.
+  // - The invocation to which the execution request belongs, so that
+  //   may be scheduled fairly with respect to actions queued by other
+  //   users.
+  // - The execution timeout that needs to be applied.
+  // - If the platform has workers partitioned across multiple size
+  //   classes, it must choose a size class on which execution is
+  //   attempted initially.
+  //
+  // The action router is the subsystem that is responsible for
+  // extracting these properties.
+  //
+  // It is possible to write fairly complex action router configurations
+  // (e.g., ones that apply different policies between platforms, or
+  // reroute requests from one platform to another). However, for
+  // typical setups the configuration can remain fairly simple. It is
+  // recommended that a configuration like the one below is used as a
+  // starting point:
+  //
+  // {
+  //   simple: {
+  //     platformKeyExtractor: { actionAndCommand: {} },
+  //     invocationKeyExtractors: [{ toolInvocationId: {} }],
+  //     initialSizeClassAnalyzer: {
+  //       defaultExecutionTimeout: '1800s',
+  //       maximumExecutionTimeout: '7200s',
+  //     },
+  //   },
+  // }
+  buildbarn.configuration.scheduler.ActionRouterConfiguration action_router =
+      16;
+
+  // Optional: The Initial Size Class Cache (ISCC) where execution times
+  // of actions are read and written.
+  //
+  // This option only needs to be set if one or feedback driven
+  // analyzers are configured through 'action_router'.
+  buildbarn.configuration.blobstore.BlobAccessConfiguration
+      initial_size_class_cache = 17;
+
+  // Platform queues are removed when no workers have been present
+  // during this time period.
+  //
+  // Recommended value: 900s
+  google.protobuf.Duration platform_queue_with_no_workers_timeout = 18;
+}
+
+message AWSASGLifecycleHookConfiguration {
+  // The URL of the Simple Queue Service (SQS) queue where
+  // "autoscaling:EC2_INSTANCE_TERMINATING" events are posted.
+  string sqs_url = 1;
+
+  // Label that should be used to match the instance ID of the EC2
+  // instance (i-*) against workers known by the scheduler. For example,
+  // if your workers are all called {"instance": "i-*", "thread": "*"},
+  // then this configuration option should be set to "instance".
+  //
+  // On systems like Amazon EKS, it is possible to attach an instance ID
+  // label to workers by creating an initContainer that stores the
+  // contents of http://169.254.169.254/latest/meta-data/instance-id in
+  // a file in an emptyDir. This file can then be loaded by bb_worker on
+  // startup using Jsonnet's importstr command.
+  //
+  // Setting this configuration option incorrectly may cause the
+  // scheduler to not drain the right set of workers.
+  string instance_id_label = 2;
+}
+
+message PredeclaredPlatformQueueConfiguration {
+  // The instance name prefix of the platform queue to create.
+  string instance_name_prefix = 1;
+
+  // The platform properties of the platform queue to create.
+  build.bazel.remote.execution.v2.Platform platform = 2;
+
+  // The maximum size class for which workers exist for this platform
+  // queue. All actions that fail on smaller size classes will be
+  // retried on workers of this size class.
+  uint32 maximum_size_class = 3;
+
+  // Was 'initial_size_class_feedback_driven_analyzer'. This option has
+  // moved into ApplicationConfiguration.action_router.
+  reserved 4;
+
+  // Allow workers to continue to execute actions from the same
+  // invocation up to given amount of time, if doing so keeps the number
+  // of workers assigned to an invocation balanced. It is worth setting
+  // this option if there is an inherent overhead when switching between
+  // actions belonging to different invocations.
+  //
+  // For example, consider the case where workers are configured to run
+  // tests inside virtual machines, and that the virtual machine's boot
+  // image is provided as part of the input root. When actions that use
+  // the same boot image run right after each other, the existing
+  // virtual machine may be repurposed. If the boot image is different,
+  // a costly restart needs to be performed, so that a new image may be
+  // loaded. By placing actions that use different boot images in
+  // separate invocations and adding stickiness, the probability of
+  // needing to do virtual machine restarts decreases.
+  //
+  // Because invocations can be nested by using multiple invocation key
+  // extractors, this field contains a list of durations of stickiness
+  // to apply at each level. If the number of invocation keys of an
+  // operation exceeds the configured number of stickiness limits, the
+  // stickiness limit for the remaining invocation keys is assumed to be
+  // zero.
+  //
+  // This option may require custom implementations of
+  // invocation.KeyExtractor to be effective.
+  //
+  // Recommended value: unset
+  repeated google.protobuf.Duration worker_invocation_stickiness_limits = 5;
+
+  // NOTE: The option below only has effect when feedback driven initial
+  // size class analysis is enabled.
+  //
+  // There is a small probability that this implementation runs actions
+  // on size classes even if it is fairly certain that they are
+  // suboptimal (either too small or too large). This is necessary, as
+  // without it there is a chance that previous execution statistics
+  // stored in the ISCC remain permanently outdated. The downside of
+  // this strategy is that it may cause unnecessary delays, especially
+  // when attempted against long-running actions that are part of the
+  // critical path of a build.
+  //
+  // To mitigate this, this implementation uses an alternative execution
+  // strategy in case there is a >50% probability of failure on a
+  // smaller size class. Instead of first executing the action on the
+  // smaller size class, followed by falling back to the largest size
+  // class, it schedules it the other way around. The client is
+  // unblocked as soon as the execution on the largest size class
+  // succeeds, while the execution on the smallest size class is
+  // performed in the background.
+  //
+  // To make sure that operations that are merely created to perform
+  // learning in the background don't starve other builds that are
+  // taking place, all of them are placed in a single fictive
+  // invocation, so that fairness is respected.
+  //
+  // This option determines the maximum number of background learning
+  // operations that may be in the QUEUED execution stage, per size
+  // class. Excessive operations are discarded. Not only is it necessary
+  // to set this value to ensure that the scheduler doesn't run out of
+  // memory due to background actions piling up, it can also put a limit
+  // on how much the cluster is scaled up (in case autoscaling based on
+  // queue sizes is performed).
+  //
+  // Recommended value: 1000
+  int32 maximum_queued_background_learning_operations = 6;
+
+  // NOTE: The option below only has effect when feedback driven initial
+  // size class analysis is enabled.
+  //
+  // The REv2 execution priority that needs to be used for background
+  // learning operations.
+  //
+  // bb_scheduler respects REv2 execution priorities by increasing the
+  // number of actions to run concurrently between invocations by a
+  // factor 2 for every 100 decrease in priority value (i.e., lower
+  // priority value means faster builds).
+  //
+  // This option determines how aggressively background learning
+  // operations should be preferred over operations enqueued by clients.
+  //
+  // Recommended value: 0
+  int32 background_learning_operation_priority = 7;
+}

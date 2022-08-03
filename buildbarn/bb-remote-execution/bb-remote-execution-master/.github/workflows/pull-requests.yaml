@@ -1,0 +1,101 @@
+{
+   "jobs": {
+      "build_and_test": {
+         "runs-on": "ubuntu-latest",
+         "steps": [
+            {
+               "name": "Installing Bazel",
+               "run": "curl -L https://github.com/bazelbuild/bazel/releases/download/5.0.0/bazel-5.0.0-linux-x86_64 > ~/bazel && chmod +x ~/bazel && echo ~ >> ${GITHUB_PATH}"
+            },
+            {
+               "name": "Check out source code",
+               "uses": "actions/checkout@v1"
+            },
+            {
+               "name": "Restore Bazel cache",
+               "uses": "actions/cache@v1",
+               "with": {
+                  "key": "bazel",
+                  "path": "~/.cache/bazel"
+               }
+            },
+            {
+               "name": "Gazelle",
+               "run": "bazel run //:gazelle -- update-repos -from_file=go.mod -to_macro go_dependencies.bzl%go_dependencies -prune && bazel run //:gazelle"
+            },
+            {
+               "name": "Buildifier",
+               "run": "sed '/^$/d' go_dependencies.bzl > go_dependencies.bzl.new && mv go_dependencies.bzl.new go_dependencies.bzl && bazel run @com_github_bazelbuild_buildtools//:buildifier"
+            },
+            {
+               "name": "Gofmt",
+               "run": "bazel run @cc_mvdan_gofumpt//:gofumpt -- -lang 1.18 -w -extra $(pwd)"
+            },
+            {
+               "name": "Clang format",
+               "run": "find . -name '*.proto' -exec bazel run @llvm_toolchain_llvm//:bin/clang-format -- -i {} +"
+            },
+            {
+               "name": "GitHub workflows",
+               "run": "bazel build //tools/github_workflows && cp bazel-bin/tools/github_workflows/*.yaml .github/workflows"
+            },
+            {
+               "name": "Protobuf generation",
+               "run": "bazel build $(bazel query 'kind(\"go_proto_library\", //...)')\nfind . -name '*.pb.go' -delete\nfind bazel-bin/pkg/proto -name '*.pb.go' | while read f; do\n  cat $f > $(echo $f | sed -e 's|.*/pkg/proto/|pkg/proto/|')\ndone\n"
+            },
+            {
+               "name": "Test style conformance",
+               "run": "git diff --exit-code HEAD --"
+            },
+            {
+               "name": "Golint",
+               "run": "bazel run @org_golang_x_lint//golint -- -set_exit_status $(pwd)/..."
+            },
+            {
+               "name": "Check for ineffective assignments",
+               "run": "bazel run @com_github_gordonklaus_ineffassign//:ineffassign $(pwd)"
+            },
+            {
+               "name": "linux_amd64: build and test",
+               "run": "bazel test --test_output=errors --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //..."
+            },
+            {
+               "name": "linux_386: build and test",
+               "run": "bazel test --test_output=errors --platforms=@io_bazel_rules_go//go/toolchain:linux_386 //..."
+            },
+            {
+               "name": "linux_arm: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm //..."
+            },
+            {
+               "name": "linux_arm64: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64 //..."
+            },
+            {
+               "name": "darwin_amd64: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //..."
+            },
+            {
+               "name": "darwin_arm64: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_arm64 //..."
+            },
+            {
+               "name": "freebsd_amd64: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:freebsd_amd64 //cmd/bb_noop_worker //cmd/bb_runner //cmd/bb_scheduler //cmd/bb_worker //cmd/fake_python //cmd/fake_xcrun"
+            },
+            {
+               "name": "windows_amd64: build and test",
+               "run": "bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //..."
+            }
+         ]
+      }
+   },
+   "name": "pull-requests",
+   "on": {
+      "pull_request": {
+         "branches": [
+            "master"
+         ]
+      }
+   }
+}

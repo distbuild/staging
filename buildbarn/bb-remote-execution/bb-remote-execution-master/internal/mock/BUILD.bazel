@@ -1,0 +1,425 @@
+# gazelle:ignore
+
+load("@bazel_gomock//:gomock.bzl", "gomock")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+gomock(
+    name = "aliases",
+    out = "aliases.go",
+    interfaces = [
+        "CancelFunc",
+        "Context",
+        "ReadCloser",
+    ],
+    library = "//internal/mock/aliases",
+    package = "mock",
+)
+
+gomock(
+    name = "auth",
+    out = "auth.go",
+    interfaces = [
+        "Authorizer",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/auth",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore",
+    out = "blobstore.go",
+    interfaces = ["BlobAccess"],
+    library = "@com_github_buildbarn_bb_storage//pkg/blobstore",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore_re",
+    out = "blobstore_re.go",
+    interfaces = ["Suspendable"],
+    library = "//pkg/blobstore",
+    package = "mock",
+)
+
+gomock(
+    name = "blockdevice",
+    out = "blockdevice.go",
+    interfaces = ["BlockDevice"],
+    library = "@com_github_buildbarn_bb_storage//pkg/blockdevice",
+    package = "mock",
+)
+
+gomock(
+    name = "builder",
+    out = "builder.go",
+    interfaces = [
+        "BuildDirectory",
+        "BuildDirectoryCreator",
+        "BuildExecutor",
+        "CompletedActionLogger",
+        "ParentPopulatableDirectory",
+        "StorageFlusher",
+        "UploadableDirectory",
+    ],
+    library = "//pkg/builder",
+    package = "mock",
+)
+
+gomock(
+    name = "buildqueuestate",
+    out = "buildqueuestate.go",
+    interfaces = ["BuildQueueStateServer"],
+    library = "//pkg/proto/buildqueuestate",
+    package = "mock",
+)
+
+gomock(
+    name = "cas",
+    out = "cas.go",
+    interfaces = [
+        "DirectoryFetcher",
+        "DirectoryWalker",
+        "FileFetcher",
+    ],
+    library = "//pkg/cas",
+    package = "mock",
+)
+
+gomock(
+    name = "cleaner",
+    out = "cleaner.go",
+    interfaces = [
+        "Cleaner",
+        "ProcessTable",
+    ],
+    library = "//pkg/cleaner",
+    package = "mock",
+)
+
+gomock(
+    name = "clock",
+    out = "clock.go",
+    interfaces = [
+        "Clock",
+        "Timer",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/clock",
+    package = "mock",
+)
+
+gomock(
+    name = "cloud_aws",
+    out = "cloud_aws.go",
+    interfaces = [
+        "AutoScalingClient",
+        "LifecycleHookHandler",
+        "SQSClient",
+        "SQSMessageHandler",
+    ],
+    library = "//pkg/cloud/aws",
+    package = "mock",
+)
+
+gomock(
+    name = "completedactionlogger",
+    out = "completedactionlogger.go",
+    interfaces = ["CompletedActionLogger_LogCompletedActionsClient"],
+    library = "//pkg/proto/completedactionlogger",
+    package = "mock",
+)
+
+gomock(
+    name = "filesystem",
+    out = "filesystem.go",
+    interfaces = [
+        "Directory",
+        "DirectoryCloser",
+        "FileReader",
+        "FileReadWriter",
+        "FileWriter",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/filesystem",
+    package = "mock",
+)
+
+gomock(
+    name = "filesystem_re",
+    out = "filesystem_re.go",
+    interfaces = [
+        "DirectoryOpener",
+        "FilePool",
+        "SectorAllocator",
+    ],
+    library = "//pkg/filesystem",
+    package = "mock",
+)
+
+gomock(
+    name = "filesystem_virtual",
+    out = "filesystem_virtual.go",
+    interfaces = [
+        "CASFileFactory",
+        "CharacterDeviceFactory",
+        "ChildFilter",
+        "Directory",
+        "DirectoryEntryReporter",
+        "FileAllocator",
+        "FUSERemovalNotifier",
+        "FUSERemovalNotifierRegistrar",
+        "HandleResolver",
+        "InitialContentsFetcher",
+        "Leaf",
+        "NativeLeaf",
+        "ResolvableHandleAllocation",
+        "ResolvableHandleAllocator",
+        "StatefulDirectoryHandle",
+        "StatefulHandleAllocation",
+        "StatefulHandleAllocator",
+        "StatelessHandleAllocation",
+        "StatelessHandleAllocator",
+        "SymlinkFactory",
+    ],
+    library = "//pkg/filesystem/virtual",
+    mock_names = {
+        "Directory": "MockVirtualDirectory",
+        "Leaf": "MockVirtualLeaf",
+    },
+    package = "mock",
+)
+
+gomock(
+    name = "fuse",
+    out = "fuse.go",
+    interfaces = [
+        "RawFileSystem",
+        "ReadDirEntryList",
+        "ReadDirPlusEntryList",
+        "ServerCallbacks",
+    ],
+    library = "@com_github_hanwen_go_fuse_v2//fuse",
+    package = "mock",
+    tags = ["manual"],
+)
+
+gomock(
+    name = "grpc_go",
+    out = "grpc_go.go",
+    interfaces = [
+        "ClientConnInterface",
+        "ClientStream",
+    ],
+    library = "@org_golang_google_grpc//:grpc",
+    package = "mock",
+)
+
+gomock(
+    name = "initialsizeclass",
+    out = "initialsizeclass.go",
+    interfaces = [
+        "Learner",
+        "PreviousExecutionStatsHandle",
+        "PreviousExecutionStatsStore",
+        "Selector",
+        "StrategyCalculator",
+    ],
+    library = "//pkg/scheduler/initialsizeclass",
+    package = "mock",
+)
+
+gomock(
+    name = "platform",
+    out = "platform.go",
+    interfaces = ["KeyExtractor"],
+    library = "//pkg/scheduler/platform",
+    mock_names = {"KeyExtractor": "MockPlatformKeyExtractor"},
+    package = "mock",
+)
+
+gomock(
+    name = "random",
+    out = "random.go",
+    interfaces = [
+        "SingleThreadedGenerator",
+        "ThreadSafeGenerator",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/random",
+    package = "mock",
+)
+
+gomock(
+    name = "remoteexecution",
+    out = "remoteexecution.go",
+    interfaces = [
+        "Execution_ExecuteServer",
+        "Execution_WaitExecutionServer",
+    ],
+    library = "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+    package = "mock",
+)
+
+gomock(
+    name = "remoteworker",
+    out = "remoteworker.go",
+    interfaces = ["OperationQueueClient"],
+    library = "//pkg/proto/remoteworker",
+    package = "mock",
+)
+
+gomock(
+    name = "routing",
+    out = "routing.go",
+    interfaces = ["ActionRouter"],
+    library = "//pkg/scheduler/routing",
+    package = "mock",
+)
+
+gomock(
+    name = "runner",
+    out = "runner.go",
+    interfaces = [
+        "RunnerClient",
+        "RunnerServer",
+    ],
+    library = "//pkg/proto/runner",
+    package = "mock",
+)
+
+gomock(
+    name = "smithy",
+    out = "smithy.go",
+    interfaces = ["APIError"],
+    library = "@com_github_aws_smithy_go//:smithy-go",
+    package = "mock",
+)
+
+gomock(
+    name = "storage_builder",
+    out = "storage_builder.go",
+    interfaces = ["BuildQueue"],
+    library = "@com_github_buildbarn_bb_storage//pkg/builder",
+    package = "mock",
+)
+
+gomock(
+    name = "storage_util",
+    out = "storage_util.go",
+    interfaces = [
+        "ErrorLogger",
+        "UUIDGenerator",
+    ],
+    library = "@com_github_buildbarn_bb_storage//pkg/util",
+    package = "mock",
+)
+
+gomock(
+    name = "sync",
+    out = "sync.go",
+    interfaces = ["TryLocker"],
+    library = "//pkg/sync",
+    package = "mock",
+)
+
+gomock(
+    name = "trace",
+    out = "trace.go",
+    interfaces = [
+        "Span",
+        "Tracer",
+        "TracerProvider",
+    ],
+    library = "@io_opentelemetry_go_otel_trace//:trace",
+    package = "mock",
+)
+
+go_library(
+    name = "mock",
+    srcs = [
+        ":aliases.go",
+        ":auth.go",
+        ":blobstore.go",
+        ":blobstore_re.go",
+        ":blockdevice.go",
+        ":builder.go",
+        ":buildqueuestate.go",
+        ":cas.go",
+        ":cleaner.go",
+        ":clock.go",
+        ":cloud_aws.go",
+        ":completedactionlogger.go",
+        ":filesystem.go",
+        ":filesystem_re.go",
+        ":filesystem_virtual.go",
+        ":grpc_go.go",
+        ":initialsizeclass.go",
+        ":platform.go",
+        ":random.go",
+        ":remoteexecution.go",
+        ":remoteworker.go",
+        ":routing.go",
+        ":runner.go",
+        ":smithy.go",
+        ":storage_builder.go",
+        ":storage_util.go",
+        ":sync.go",
+        ":trace.go",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:darwin": [
+            ":fuse.go",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            ":fuse.go",
+        ],
+        "//conditions:default": [],
+    }),
+    importpath = "github.com/buildbarn/bb-remote-execution/internal/mock",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//pkg/blobstore",
+        "//pkg/builder",
+        "//pkg/cas",
+        "//pkg/cleaner",
+        "//pkg/filesystem",
+        "//pkg/filesystem/virtual",
+        "//pkg/proto/buildqueuestate",
+        "//pkg/proto/completedactionlogger",
+        "//pkg/proto/outputpathpersistency",
+        "//pkg/proto/remoteoutputservice",
+        "//pkg/proto/remoteworker",
+        "//pkg/proto/runner",
+        "//pkg/scheduler/initialsizeclass",
+        "//pkg/scheduler/invocation",
+        "//pkg/scheduler/platform",
+        "@com_github_aws_aws_sdk_go_v2_service_autoscaling//:autoscaling",
+        "@com_github_aws_aws_sdk_go_v2_service_sqs//:sqs",
+        "@com_github_aws_smithy_go//:smithy-go",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_buildbarn_bb_storage//pkg/blobstore",
+        "@com_github_buildbarn_bb_storage//pkg/blobstore/buffer",
+        "@com_github_buildbarn_bb_storage//pkg/builder",
+        "@com_github_buildbarn_bb_storage//pkg/clock",
+        "@com_github_buildbarn_bb_storage//pkg/digest",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem",
+        "@com_github_buildbarn_bb_storage//pkg/filesystem/path",
+        "@com_github_buildbarn_bb_storage//pkg/proto/cas",
+        "@com_github_buildbarn_bb_storage//pkg/proto/iscc",
+        "@com_github_buildbarn_bb_storage//pkg/util",
+        "@com_github_golang_mock//gomock",
+        "@com_github_google_uuid//:uuid",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//types/known/anypb:go_default_library",
+        "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "@com_github_hanwen_go_fuse_v2//fuse",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_hanwen_go_fuse_v2//fuse",
+        ],
+        "//conditions:default": [],
+    }),
+)

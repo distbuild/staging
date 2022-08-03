@@ -1,0 +1,44 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+
+proto_library(
+    name = "bb_worker_proto",
+    srcs = ["bb_worker.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/filesystem:filesystem_proto",
+        "//pkg/proto/configuration/filesystem/virtual:virtual_proto",
+        "//pkg/proto/resourceusage:resourceusage_proto",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/blobstore:blobstore_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction:eviction_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global:global_proto",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc:grpc_proto",
+        "@com_google_protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "bb_worker_go_proto",
+    importpath = "github.com/buildbarn/bb-remote-execution/pkg/proto/configuration/bb_worker",
+    proto = ":bb_worker_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/filesystem",
+        "//pkg/proto/configuration/filesystem/virtual",
+        "//pkg/proto/resourceusage",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/blobstore",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/eviction",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/global",
+        "@com_github_buildbarn_bb_storage//pkg/proto/configuration/grpc",
+    ],
+)
+
+go_library(
+    name = "bb_worker",
+    embed = [":bb_worker_go_proto"],
+    importpath = "github.com/buildbarn/bb-remote-execution/pkg/proto/configuration/bb_worker",
+    visibility = ["//visibility:public"],
+)
