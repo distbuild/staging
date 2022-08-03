@@ -1,0 +1,16 @@
+<tr>
+	<th style="width: 25%">Arguments:</th>
+	<td class="font-monospace" style="width: 75%; overflow-x: scroll">
+		<div style="padding-left: 2em; text-indent: -2em">
+			{{$firstArgument := true}}
+			{{range .}}
+				{{if $firstArgument}}
+					<b class="text-nowrap">{{shellquote .}}</b>
+				{{else}}
+					<span class="text-nowrap">{{shellquote .}}</span>
+				{{end}}
+				{{$firstArgument = false}}
+			{{end}}
+		</div>
+	</td>
+</tr>

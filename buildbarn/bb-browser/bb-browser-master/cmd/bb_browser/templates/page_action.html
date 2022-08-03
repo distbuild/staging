@@ -1,0 +1,342 @@
+{{$actionResult := .ExecuteResponse.GetResult}}
+{{$status := .ExecuteResponse.GetStatus}}
+
+{{if ne $status.GetCode 0}}
+	{{template "header.html" "danger"}}
+{{else}}
+	{{with $actionResult}}
+		{{if eq .ExitCode 0}}
+			{{template "header.html" "success"}}
+		{{else}}
+			{{template "header.html" "danger"}}
+		{{end}}
+	{{else}}
+		{{template "header.html" "secondary"}}
+	{{end}}
+{{end}}
+
+{{if .IsHistoricalExecuteResponse}}
+	<h1 class="my-4">Historical execute response</h1>
+	<h2 class="my-4">Action<sup><a class="text-decoration-none" href="../../action/{{.ActionDigest.GetHashString}}-{{.ActionDigest.GetSizeBytes}}/">*</a></sup></h2>
+{{else}}
+	<h1 class="my-4">Action</h1>
+{{end}}
+
+{{if .Action}}
+<table class="table" style="table-layout: fixed">
+	{{with .Action.Timeout}}
+		<tr>
+			<th style="width: 25%">Timeout:</th>
+			<td style="width: 75%">{{.AsDuration}}</td>
+		</tr>
+	{{end}}
+	<tr>
+		<th style="width: 25%">Do not cache:</th>
+		<td style="width: 75%">{{if .Action.DoNotCache}}yes{{else}}no{{end}}</td>
+	</tr>
+	{{with .Action.Platform}}
+		<tr>
+			<th style="width: 25%">Platform properties:</th>
+			<td style="width: 75%">
+				{{range .Properties}}
+					<span class="badge bg-primary text-nowrap">{{.Name}}={{.Value | printf "%#v"}}</span>
+				{{end}}
+			</td>
+		</tr>
+	{{end}}
+	{{if and .Command .InputRoot}}
+		<tr>
+			<th style="width: 25%">How to run locally:</th>
+			<td class="font-monospace text-nowrap" style="width: 75%; overflow-x: scroll">
+				<b>rsync</b> --delete --link-dest {{.InputRoot.BBClientdPath}}/ --progress --recursive {{.InputRoot.BBClientdPath}}/ ~/bb_clientd/scratch/{{.ActionDigest.GetHashString}}-{{.ActionDigest.GetSizeBytes}}<br/>
+				<b>cd</b> ~/bb_clientd/scratch/{{.ActionDigest.GetHashString}}-{{.ActionDigest.GetSizeBytes}}<br/>
+				{{.Command.BBClientdPath}}
+			</td>
+		</tr>
+	{{end}}
+</table>
+{{else}}
+This action could not be found.
+{{end}}
+
+<h2 class="my-4">Command{{if .Action}}<sup><a class="text-decoration-none" href="../../command/{{.Action.CommandDigest.Hash}}-{{.Action.CommandDigest.SizeBytes}}/">*</a></sup>{{end}}</h2>
+
+{{with .Command}}
+{{template "view_command.html" .}}
+{{else}}
+The command of this action could not be found.
+{{end}}
+
+<h2 class="my-4">Result</h2>
+
+{{if $actionResult}}
+<table class="table" style="table-layout: fixed">
+	{{if ne $status.GetCode 0}}
+		<tr>
+			<th style="width: 25%">Status:</th>
+			<td style="width: 75%">Code {{$status.GetCode}}: {{$status.Message}}</td>
+		</tr>
+	{{else}}
+		<tr>
+			<th style="width: 25%">Exit code:</th>
+			<td style="width: 75%">
+				{{$actionResult.ExitCode}}
+				{{if eq $actionResult.ExitCode 0}}
+					<span class="badge badge-success">Success</span>
+				{{else}}
+					<span class="badge badge-danger">Failure</span>
+				{{end}}
+			</td>
+		</tr>
+	{{end}}
+	{{template "view_log.html" .StdoutInfo}}
+	{{template "view_log.html" .StderrInfo}}
+</table>
+{{else}}
+The action result of this action could not be found.
+{{end}}
+
+<h2 class="my-4">Input files{{if .Action}}<sup><a class="text-decoration-none" href="../../directory/{{.Action.InputRootDigest.Hash}}-{{.Action.InputRootDigest.SizeBytes}}/">*</a></sup>{{end}}</h2>
+
+{{if .InputRoot}}
+{{template "view_directory.html" .InputRoot}}
+{{else}}
+The input root of this action could not be found.
+{{end}}
+
+<h2 class="my-4">Output files</h2>
+
+<table class="table">
+	<thead>
+		<tr>
+			<th scope="col">Mode</th>
+			<th scope="col">Size</th>
+			<th scope="col" style="width: 100%">Filename</th>
+		</tr>
+	</thead>
+	{{range .OutputDirectories}}
+		<tr class="font-monospace">
+			<td style="white-space: nowrap">drwxr-xr-x</td>
+			<td style="text-align: right">{{.TreeDigest.SizeBytes}}</td>
+			<td style="width: 100%; word-break: break-all"><a class="text-success" href="../../tree/{{.TreeDigest.Hash}}-{{.TreeDigest.SizeBytes}}/">{{.Path}}</a>/</td>
+		</tr>
+	{{end}}
+	{{range .OutputSymlinks}}
+		<tr class="font-monospace">
+			<td>lrwxrwxrwx</td>
+			<td></td>
+			<td style="width: 100%; word-break: break-all"><span class="text-success">{{.Path}}</span> -&gt; {{.Target}}</td>
+		</tr>
+	{{end}}
+	{{range .OutputFiles}}
+		<tr class="font-monospace">
+			<td style="white-space: nowrap">-rw{{if .IsExecutable}}x{{else}}-{{end}}r-{{if .IsExecutable}}x{{else}}-{{end}}r-{{if .IsExecutable}}x{{else}}-{{end}}</td>
+			<td style="text-align: right">{{.Digest.SizeBytes}}</td>
+			<td style="width: 100%; word-break: break-all"><a class="text-success" href="../../file/{{.Digest.Hash}}-{{.Digest.SizeBytes}}/{{basename .Path}}">{{.Path}}</a></td>
+		</tr>
+	{{end}}
+	{{range .MissingDirectories}}
+		<tr class="font-monospace">
+			<td style="white-space: nowrap">drwxr-xr-x</td>
+			<td></td>
+			<td style="width: 100%; word-break: break-all"><s class="text-danger">{{.}}</s>/</td>
+		</tr>
+	{{end}}
+	{{range .MissingFiles}}
+		<tr class="font-monospace">
+			<td style="white-space: nowrap">-rw-r--r--</td>
+			<td></td>
+			<td style="width: 100%; word-break: break-all"><s class="text-danger">{{.}}</s></td>
+		</tr>
+	{{end}}
+</table>
+
+{{with $actionResult.GetExecutionMetadata}}
+	<h2 class="my-4">Execution metadata</h2>
+
+	<table class="table" style="table-layout: fixed">
+		{{with .Worker}}
+			<tr>
+				<th style="width: 25%">Worker:</th>
+				<td style="width: 75%">
+					{{with to_worker_id .}}
+						{{range $key, $value := .}}
+							<span class="badge bg-primary text-nowrap">{{$key}}={{$value | printf "%#v"}}</span>
+						{{end}}
+					{{else}}
+						{{.}}
+					{{end}}
+				</td>
+			</tr>
+		{{end}}
+		<tr>
+			<th style="width: 25%">Timeline:</th>
+			<td style="width: 75%">
+				{{with timestamp_proto_rfc3339 .QueuedTimestamp}}<b>{{.}}</b><br/>{{end}}
+				Action added to the queue.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .QueuedTimestamp .WorkerStartTimestamp}}
+				Worker received the action.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .WorkerStartTimestamp .InputFetchStartTimestamp}}
+				Worker started fetching action inputs.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .InputFetchStartTimestamp .InputFetchCompletedTimestamp}}
+				Worker finished fetching action inputs.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .InputFetchCompletedTimestamp .ExecutionStartTimestamp}}
+				Worker started executing the action command.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .ExecutionStartTimestamp .ExecutionCompletedTimestamp}}
+				Worker completed executing the action command.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .ExecutionCompletedTimestamp .OutputUploadStartTimestamp}}
+				Worker started uploading action outputs.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .OutputUploadStartTimestamp .OutputUploadCompletedTimestamp}}
+				Worker completed uploading action outputs.<br/>
+				{{template "view_action_timestamp_delta.html" timestamp_proto_delta .OutputUploadCompletedTimestamp .WorkerCompletedTimestamp}}
+				Worker completed the action, including all stages.
+			</td>
+		</tr>
+		{{with .VirtualExecutionDuration}}
+			<tr>
+				<th style="width: 25%">Virtual execution duration:</th>
+				<td style="width: 75%">{{.AsDuration}}</td>
+			</tr>
+		{{end}}
+	</table>
+
+	{{range .AuxiliaryMetadata}}
+		{{with to_request_metadata .}}
+			<h3 class="my-4">Request metadata</h3>
+			<table class="table" style="table-layout: fixed">
+				{{with .ToolDetails}}
+					<tr>
+						<th style="width: 25%">Tool:</th>
+						<td style="width: 75%">{{.ToolName}} {{.ToolVersion}}</td>
+					</tr>
+				{{end}}
+				<tr>
+					<th style="width: 25%">Tool invocation ID:</th>
+					<td class="font-monospace" style="width: 75%">{{.ToolInvocationId}}</td>
+				</tr>
+				<tr>
+					<th style="width: 25%">Correlated invocations ID:</th>
+					<td class="font-monospace" style="width: 75%">{{.CorrelatedInvocationsId}}</td>
+				</tr>
+				{{with .ActionMnemonic}}
+					<tr>
+						<th style="width: 25%">Action mnemonic:</th>
+						<td style="width: 75%">{{.}}</td>
+					</tr>
+				{{end}}
+				{{with .TargetId}}
+					<tr>
+						<th style="width: 25%">Target ID:</th>
+						<td style="width: 75%; word-break: break-all">{{.}}</td>
+					</tr>
+				{{end}}
+				{{with .ConfigurationId}}
+					<tr>
+						<th style="width: 25%">Configuration ID:</th>
+						<td style="width: 75%">{{.}}</td>
+					</tr>
+				{{end}}
+			</table>
+		{{end}}
+
+		{{with to_file_pool_resource_usage .}}
+			<h3 class="my-4">File pool resource usage</h3>
+			<table class="table" style="table-layout: fixed">
+				<tr>
+					<th style="width: 25%">Files created:</th>
+					<td style="width: 75%">{{.FilesCreated}}</td>
+				</tr>
+				<tr>
+					<th style="width: 25%">Peak usage:</th>
+					<td style="width: 75%">{{.FilesCountPeak}} files, having a total size of {{humanize_bytes .FilesSizeBytesPeak}}</td>
+				</tr>
+				{{if .ReadsCount}}
+					<tr>
+						<th style="width: 25%">Reads:</th>
+						<td style="width: 75%">{{.ReadsCount}} operations, having a total size of {{humanize_bytes .ReadsSizeBytes}}</td>
+					</tr>
+				{{end}}
+				{{if .WritesCount}}
+					<tr>
+						<th style="width: 25%">Writes:</th>
+						<td style="width: 75%">{{.WritesCount}} operations, having a total size of {{humanize_bytes .WritesSizeBytes}}</td>
+					</tr>
+				{{end}}
+				{{if .TruncatesCount}}
+					<tr>
+						<th style="width: 25%">Truncates:</th>
+						<td style="width: 75%">{{.TruncatesCount}} operations</td>
+					</tr>
+				{{end}}
+			</table>
+		{{end}}
+
+		{{with to_posix_resource_usage .}}
+			<h3 class="my-4">POSIX resource usage</h3>
+			<table class="table" style="table-layout: fixed">
+				<tr>
+					<th style="width: 25%">CPU time:</th>
+					<td style="width: 75%">
+						{{.UserTime.AsDuration}} user,
+						{{.SystemTime.AsDuration}} system
+					</td>
+				</tr>
+				{{with .MaximumResidentSetSize}}
+					<tr>
+						<th style="width: 25%">Maximum resident set size:</th>
+						<td style="width: 75%">{{humanize_bytes .}}</td>
+					</tr>
+				{{end}}
+				{{if or .PageReclaims .PageFaults .Swaps}}
+					<tr>
+						<th style="width: 25%">Paging:</th>
+						<td style="width: 75%">{{.PageReclaims}} reclaims, {{.PageFaults}} faults, {{.Swaps}} swaps</td>
+					</tr>
+				{{end}}
+				{{if or .BlockInputOperations .BlockOutputOperations}}
+					<tr>
+						<th style="width: 25%">Block operations:</th>
+						<td style="width: 75%">{{.BlockInputOperations}} inputs, {{.BlockOutputOperations}} outputs</td>
+					</tr>
+				{{end}}
+				{{if or .MessagesSent .MessagesReceived}}
+					<tr>
+						<th style="width: 25%">Messages:</th>
+						<td style="width: 75%">{{.MessagesSent}} sent, {{.MessagesReceived}} received</td>
+					</tr>
+				{{end}}
+				{{with .SignalsReceived}}
+					<tr>
+						<th style="width: 25%">Signals:</th>
+						<td style="width: 75%">{{.}} received</td>
+					</tr>
+				{{end}}
+				{{if or .VoluntaryContextSwitches .InvoluntaryContextSwitches}}
+					<tr>
+						<th style="width: 25%">Context switches:</th>
+						<td style="width: 75%">{{.VoluntaryContextSwitches}} voluntary, {{.InvoluntaryContextSwitches}} involuntary</td>
+					</tr>
+				{{end}}
+			</table>
+		{{end}}
+
+		{{with to_monetary_resource_usage .}}
+			<h3 class="my-4">Monetary resource usage</h3>
+			<table class="table" style="table-layout: fixed">
+				{{range $costType, $exp := .Expenses}}
+					<tr>
+						<th style="width: 25%">{{$costType}}:</th>
+						<td style="width: 75%">{{$exp.Currency}} {{$exp.Cost}}</td>
+					</tr>
+				{{end}}
+			</table>
+		{{end}}
+	{{end}}
+{{end}}
+
+{{with .PreviousExecutionStats}}
+	<h2 class="my-4">Previous execution stats<sup><a class="text-decoration-none" href="../../previous_execution_stats/{{.ReducedActionDigest.GetHashString}}-{{.ReducedActionDigest.GetSizeBytes}}/">*</a></sup></h2>
+	{{template "view_previous_execution_stats.html" .}}
+{{end}}
+
+{{template "footer.html"}}
