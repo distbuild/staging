@@ -1,0 +1,19 @@
+# Copyright 2019 Google Inc. All Rights Reserved.
+
+# Pin resolved versions in the repo, to reduce trust in the CIPD backend.
+#
+# To regenerate them (after modifying this file):
+#   cipd ensure-file-resolve -ensure-file cipd_manifest.txt
+$ResolvedVersions cipd_manifest.versions
+
+# Fully supported plaforms.
+$VerifiedPlatform linux-amd64
+
+# You can check available cipd package in:
+# https://chrome-infra-packages.appspot.com/
+
+# go
+infra/3pp/tools/go/${platform} version:2@1.18.1
+
+# protoc
+infra/3pp/tools/protoc/${platform} version:2@3.19.4
