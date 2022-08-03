@@ -1,0 +1,919 @@
+syntax = "proto3";
+
+package buildbarn.configuration.blobstore;
+
+import "google/rpc/status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "pkg/proto/configuration/blockdevice/blockdevice.proto";
+import "pkg/proto/configuration/cloud/aws/aws.proto";
+import "pkg/proto/configuration/digest/digest.proto";
+import "pkg/proto/configuration/grpc/grpc.proto";
+import "pkg/proto/configuration/http/http.proto";
+import "pkg/proto/configuration/tls/tls.proto";
+
+option go_package = "github.com/buildbarn/bb-storage/pkg/proto/configuration/blobstore";
+
+// Storage configuration for Bazel Buildbarn.
+message BlobstoreConfiguration {
+  // Storage configuration for the Content Addressable Storage (CAS).
+  BlobAccessConfiguration content_addressable_storage = 1;
+
+  // Storage configuration for the Action Cache (AC).
+  BlobAccessConfiguration action_cache = 2;
+}
+
+message BlobAccessConfiguration {
+  oneof backend {
+    // Read objects from/write objects to a Redis server.
+    RedisBlobAccessConfiguration redis = 2;
+
+    // Read objects from/write objects to a server that supports
+    // Bazel's HTTP caching protocol.
+    HTTPBlobAccessConfiguration http = 3;
+
+    // Cache reads from a slow remote storage backend into a fast
+    // local storage backend.
+    ReadCachingBlobAccessConfiguration read_caching = 4;
+
+    // Split up objects across two storage backends by digest size.
+    SizeDistinguishingBlobAccessConfiguration size_distinguishing = 5;
+
+    // Read objects from/write objects to a GRPC service that
+    // implements the remote execution protocol.
+    buildbarn.configuration.grpc.ClientConfiguration grpc = 7;
+
+    // Always fail with a fixed error response.
+    google.rpc.Status error = 8;
+
+    // Fan out requests across multiple storage backends to spread
+    // out load.
+    ShardingBlobAccessConfiguration sharding = 9;
+
+    // Store blobs in two backends. Blobs present in exactly one backend
+    // are automatically replicated to the other backend.
+    //
+    // This backend does not guarantee high availability, as it does not
+    // function in case one backend is unavailable. Crashed backends
+    // need to be replaced with functional empty instances. These will
+    // be refilled automatically.
+    MirroredBlobAccessConfiguration mirrored = 14;
+
+    // Store blobs on the local system.
+    LocalBlobAccessConfiguration local = 15;
+
+    // Cache knowledge of which blobs exist locally.
+    //
+    // Bazel doesn't have a client-side cache with knowledge on which
+    // objects are present inside a remote cache. This means that it
+    // will often call ContentAddressableStorage.FindMissingBlobs() with
+    // sets that have a strong overlap with what was requested
+    // previously.
+    //
+    // This decorator can be used to introduce such a cache server side.
+    // It is especially useful for multi-level storage setups. It can
+    // cause a reduction in load on storage nodes when this cache
+    // enabled on frontend nodes.
+    //
+    // It only makes sense to use this decorator for the Content
+    // Addressable Storage, as FindMissingBlobs() is never called
+    // against the Action Cache. The storage backend must also be robust
+    // enough to guarantee that objects don't disappear shortly after
+    // calling ContentAddressableStorage.FindMissingBlobs(), as that
+    // would cause this decorator to cache invalid data.
+    ExistenceCachingBlobAccessConfiguration existence_caching = 16;
+
+    // Only return ActionResult messages for which all output files are
+    // present in the Content Addressable Storage (CAS). Certain
+    // clients, such as Bazel, require the use of this decorator. To
+    // reduce latency, it is advised that this decorator is used at the
+    // lowest level that has a full view of the entire CAS.
+    //
+    // This decorator must be placed on the Action Cache.
+    BlobAccessConfiguration completeness_checking = 17;
+
+    // Fall back to reading data from a secondary backend when not found
+    // in the primary backend. Data is never written to the latter.
+    //
+    // This backend can be used to integrate external data sets into the
+    // system, e.g. by combining it with reference_expanding.
+    ReadFallbackBlobAccessConfiguration read_fallback = 18;
+
+    // Load Reference messages from an Indirect Content Addressable
+    // Storage (ICAS). Expand them by fetching the object from the
+    // location stored in the Reference message. This backend is only
+    // supported for the CAS.
+    //
+    // This backend can be used to integrate external data sets into the
+    // system by combining it with read_fallback.
+    ReferenceExpandingBlobAccessConfiguration reference_expanding = 19;
+
+    // Demultiplex requests across multiple storage backends, based on
+    // the instance name prefix.
+    //
+    // The logic for matching incoming requests and mutating the
+    // instance name in outgoing requests is identical to bb_storage's
+    // 'schedulers' configuration option. Please refer to that
+    // configuration option for more details.
+    DemultiplexingBlobAccessConfiguration demultiplexing = 20;
+
+    // Read objects using instance names in a hierarchical fashion. This
+    // means that if an object is written using instance name "foo/bar",
+    // it will be possible to read it using instance names "foo/bar",
+    // "foo/bar/baz", "foo/bar/baz/qux", but not instance names "",
+    // "foo", "foo/xyzzy". In other words, non-empty instance names will
+    // have contents inherited from their parent instance names. In case
+    // multiple instance names contain an object of a given digest, the
+    // one with the longest instance name is preferred.
+    //
+    // For the Action Cache (AC), it is recommended that this decorator
+    // is placed above CompletenessCheckingBlobAccess. This ensures that
+    // resolution continues, even if one or more instance names store an
+    // incomplete ActionResult.
+    //
+    // For every read operation, this decorator may generate a linear
+    // number of operations against the backend, based on the number of
+    // components in the instance name. This is acceptable for
+    // low-throughput data stores such as the Action Cache (AC) and
+    // Initial Size Class Cache (ISCC). For the Content Addressable
+    // Storage (CAS), this approach tends to be too inefficient. For the
+    // CAS, it would also be better to prefer the object with the
+    // shortest instance name, so that sharing of data between instance
+    // names is maximised. This is why this implementation does not
+    // allow enabling this option for the CAS. It is recommended that
+    // the LocalBlobAccessConfiguration.hierarchical_instance_names
+    // option is used instead.
+    BlobAccessConfiguration hierarchical_instance_names = 21;
+
+    // Hide ActionResult messages in the Action Cache (AC) where the
+    // 'worker_completed_timestamp' field in the ExecutedActionMetadata
+    // is too far in the past. This decorator can be used to ensure that
+    // all targets are rebuilt periodically.
+    ActionResultExpiringBlobAccessConfiguration action_result_expiring = 22;
+
+    // Send read traffic to a read-only replica, while sending write
+    // traffic to a source of truth. Read traffic may be sent to the
+    // source of truth if the replica is unavailable.
+    //
+    // By default, all requests are sent to the source. For read
+    // requests, this backend periodically sends a single canary request
+    // to the replica. Upon success, all subsequent read requests are
+    // sent to the replica as well. Upon failure, all requests will
+    // continue to go to the source.
+    //
+    // Only infrastructure errors (RPCs failing with INTERNAL,
+    // UNAVAILABLE and UNKNOWN) are considered failures.
+    ReadCanaryingBlobAccessConfiguration read_canarying = 23;
+
+    // Read objects from a ZIP file. Example use cases of this backend
+    // include the following:
+    //
+    // - When used in combination with ReadFallbackBlobAccess, it may be
+    //   used to augment a data store with a set of objects that are
+    //   guaranteed to remain present.
+    // - It may be used to access historical build actions that have
+    //   been archived, so that they can be inspected or rerun.
+    //
+    // If this backend is used as a Content Addressable Storage (CAS),
+    // it will search for files named "${hash}-${sizeBytes}". For other
+    // storage types it will search for files named
+    // "${hash}-${sizeBytes}-${instanceName}".
+    ZIPBlobAccessConfiguration zip_reading = 24;
+
+    // Write objects to an uncompressed ZIP file. The resulting ZIP
+    // files can be read back using the 'zip_reading' option.
+    //
+    // This backend does not support reopening existing ZIP files. ZIP
+    // files will always be truncated upon startup. The trailing central
+    // directory is only written upon graceful termination, meaning that
+    // interrupting execution will create a malformed ZIP file.
+    ZIPBlobAccessConfiguration zip_writing = 25;
+
+    // Prevent repetition in the BlobAccess configuration by introducing
+    // one or more BlobAccess objects that can later be referred to
+    // using string labels.
+    //
+    // This option does not introduce new kind of actual backend; it's
+    // merely present to allow creating BlobAccess setups that are DAG
+    // (Directed Acyclic Graph) shaped, as opposed to just trees.
+    WithLabelsBlobAccessConfiguration with_labels = 26;
+
+    // Refer to a BlobAccess object declared through 'with_labels'.
+    string label = 27;
+  }
+
+  // Was 'circular' (CircularBlobAccess). This backend has been replaced
+  // by 'local' (LocalBlobAccess).
+  reserved 6;
+
+  // Was 'cloud' (CloudBlobAccess for systems such as S3 and GCS). This
+  // backend has been removed for several reasons:
+  //
+  // - Compared to other storage backends, its time to first byte (TTFB)
+  //   was relatively high, making it unattractive for storing
+  //   everything but large Content Addressable Storage (CAS) objects.
+  // - The lack of efficient bulk operations meant that
+  //   FindMissingBlobs() performance was very poor.
+  // - The consistency guarantees provided by many bucket
+  //   implementations, most notably Amazon S3, are too weak for build
+  //   clients to function properly.
+  //
+  // Users are instructed to migrate to LocalBlobAccess in combination
+  // with ShardingBlobAccess and MirroredBlobAccess. More details can be
+  // found in the following Architecture Decision Record (ADR):
+  //
+  // https://github.com/buildbarn/bb-adrs/blob/master/0002-storage.md
+  //
+  // If S3 was mainly used to integrate existing large corpora into the
+  // CAS, it may be sufficient to use ReferenceExpandingBlobAccess
+  // instead. More details about that can be found in this ADR:
+  //
+  // https://github.com/buildbarn/bb-adrs/blob/master/0004-icas.md
+  reserved 10;
+}
+
+message ReadCachingBlobAccessConfiguration {
+  // A remote storage backend that can only be accessed slowly. This
+  // storage backend is treated as the source of truth. Write
+  // operations are forwarded to this backend.
+  BlobAccessConfiguration slow = 1;
+
+  // A local storage backend that can be accessed quickly. This
+  // storage backend is treated as a cache. Objects will only be
+  // written into it when requested for reading.
+  BlobAccessConfiguration fast = 2;
+
+  // The replication strategy that should be used to copy objects from
+  // the slow backend to the fast backend.
+  BlobReplicatorConfiguration replicator = 3;
+}
+
+message ClusteredRedisBlobAccessConfiguration {
+  // Endpoint addresses of the Redis servers.
+  repeated string endpoints = 1;
+
+  // Retry configuration, defaults to 16 if not set
+  uint32 maximum_retries = 2;
+
+  // After each attempt, the delay will be randomly selected from values
+  // between: 0 and min((2^attempt * minimum_retry_backoff),
+  // maximum_retry_backoff)
+  google.protobuf.Duration minimum_retry_backoff = 3;
+  google.protobuf.Duration maximum_retry_backoff = 4;
+}
+
+message SingleRedisBlobAccessConfiguration {
+  // Endpoint address of the Redis server (e.g., "localhost:6379").
+  string endpoint = 1;
+
+  // Numerical ID of the database.
+  int32 db = 2;
+
+  // Redis Auth Password, "" for NO Password
+  string password = 3;
+}
+
+message RedisBlobAccessConfiguration {
+  oneof mode {
+    // Redis is configured in clustered mode.
+    ClusteredRedisBlobAccessConfiguration clustered = 1;
+
+    // Redis is configured as a single server.
+    SingleRedisBlobAccessConfiguration single = 2;
+  }
+
+  // TLS configuration for the Redis connection. TLS will not be enabled
+  // when not set.
+  buildbarn.configuration.tls.ClientConfiguration tls = 4;
+
+  // key_ttl was removed because it gives the wrong eviction
+  // behaviour. Use redis's own eviction policies instead.
+  reserved 7;
+
+  // The minimum number of replicas to successfully replicate put calls to
+  // before considering it successful.
+  // If unset, no guarantee is made on the number of replicas that contain
+  // the contents of a Redis write and master failures can lose data.
+  int64 replication_count = 8;
+
+  // The maximum tolerated replication delay expressed in seconds.
+  // If unset, Redis write calls return immediately and no attempt is made to
+  // ensure that replication succeeds. This can result in data loss when
+  // the master is lost.
+  google.protobuf.Duration replication_timeout = 9;
+
+  // The following three timeouts are for individual dial/read/write
+  // operations within a retriable operation. In particular, if using
+  // a clustered redis configuration with default retries, you want to
+  // set these to be no more than a few seconds, so that slow or
+  // unresponsive redis nodes are skipped and the operation is retried
+  // on a different node.
+
+  // Dial timeout for establishing new connections.
+  // Default value can be overidden (e.g, '30s').
+  google.protobuf.Duration dial_timeout = 10;
+
+  // Timeout for socket reads. If reached, commands will fail with a timeout
+  // instead of blocking. Use value -1 for no timeout and 0 for default.
+  // Default value can be overidden (e.g, '300s').
+  google.protobuf.Duration read_timeout = 11;
+
+  // Timeout for socket writes. If reached, commands will fail with a timeout
+  // instead of blocking. Defaults to ReadTimeout,
+  // can be overidden (e.g, '300s').
+  google.protobuf.Duration write_timeout = 12;
+}
+
+message HTTPBlobAccessConfiguration {
+  // URL of the remote build cache (e.g., "http://localhost:8080/").
+  string address = 1;
+
+  // Optional: Options to be used by the HTTP client.
+  buildbarn.configuration.http.ClientConfiguration client = 2;
+}
+
+message ShardingBlobAccessConfiguration {
+  message Shard {
+    // Storage backend that is used by this shard. Omitting this
+    // causes the implementation to assume this shard is drained.
+    // Requests to this shard will be spread out across the other
+    // shards.
+    BlobAccessConfiguration backend = 1;
+
+    // Non-zero ratio of how many keys are allocated to this shard.
+    // When all shards have equal specifications (i.e., capacity and
+    // bandwidth), every shard may have a weight of one.
+    //
+    // For the backend selection algorithm to run quickly, it is not
+    // not advised to let the total weight of drained backends
+    // strongly exceed the total weight of undrained ones.
+    uint32 weight = 2;
+  }
+
+  // Initialization for the hashing algorithm used to partition the
+  // key space. This should be a random 64-bit value that is unique to
+  // this deployment. Failure to do so may result in poor distribution
+  // in case sharding is nested.
+  //
+  // Changing this value will in effect cause a full repartitioning of
+  // the data.
+  uint64 hash_initialization = 1;
+
+  // Shards to which requests are routed. To reduce the need for full
+  // repartitioning of the data when growing a cluster, it's possible
+  // to terminate this list with a drained backend that increases the
+  // total weight up to a given number. Newly added backends may
+  // allocate their weight from this backend, thereby causing most of
+  // the keyspace to still be routed to its original backend.
+  repeated Shard shards = 2;
+}
+
+message SizeDistinguishingBlobAccessConfiguration {
+  // Backend to which to send requests for small blobs (e.g., Redis).
+  BlobAccessConfiguration small = 1;
+
+  // Backend to which to send requests for large blobs (e.g., S3).
+  BlobAccessConfiguration large = 2;
+
+  // Maximum size of blobs read from/written to the backend for small blobs.
+  int64 cutoff_size_bytes = 3;
+}
+
+message MirroredBlobAccessConfiguration {
+  // Primary backend.
+  BlobAccessConfiguration backend_a = 1;
+
+  // Secondary backend.
+  BlobAccessConfiguration backend_b = 2;
+
+  // The replication strategy that should be used to copy objects from
+  // the primary backend to the secondary backend in case of
+  // inconsistencies.
+  BlobReplicatorConfiguration replicator_a_to_b = 3;
+
+  // The replication strategy that should be used to copy objects from
+  // the secondary backend to the primary backend in case of
+  // inconsistencies.
+  BlobReplicatorConfiguration replicator_b_to_a = 4;
+}
+
+// LocalBlobAccess stores all data onto disk in block sizes. A block
+// cannot span multiple blocks, meaning that blocks generally need to
+// be large in size (gigabytes). The number of blocks may be relatively
+// low. For example, for a 512 GiB cache, it is acceptable to create 32
+// blocks of 16 GiB in size.
+//
+// Blocks are partitioned into three groups based on their creation
+// time, named "old", "current" and "new". Blobs provided to Put() will
+// always be stored in a block in the "new" group. When the oldest block
+// in the "new" group becomes full, it is moved to the "current" group.
+// This causes the oldest block in the "current" group to be displaced
+// to the "old" group. The oldest block in the "old" group is discarded.
+//
+// The difference between the "current" group and the "old" group is
+// that data is refreshed when accessed. Data in the "old" group is at
+// risk of being removed in the nearby future, which is why it needs to
+// be copied into the "new" group when requested to be retained. Data
+// in the "current" group is assumed to remain present for the time
+// being, which is why it is left in place.
+//
+// Below is an illustration of how the blocks of data may be laid out at
+// a given point in time. Every column of █ characters corresponds to a
+// single block. The number of characters indicates the amount of data
+// stored within.
+//
+//     ← Over time, blocks move from "new" to "current" to "old" ←
+//
+//                   Old         Current        New
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │ █
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │ █
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │ █ █
+//                 █ █ █ █ │ █ █ █ █ █ █ █ █ │ █ █ █
+//                 ↓ ↓ ↓ ↓                     ↑ ↑ ↑ ↑
+//                 └─┴─┴─┴─────────────────────┴─┴─┴─┘
+//        Data gets copied from "old" to "new" when requested.
+//
+// Blobs get stored in blocks in the "new" group with an inverse
+// exponential probability. This is done to reduce the probability of
+// multiple block rotations close after each other, as this might put
+// excessive pressure on the garbage collector. Because the placement
+// distribution decreases rapidly, having more than three or four "new"
+// blocks would be wasteful. Having fewer is also not recommended, as
+// that increases the chance of placing objects that are used together
+// inside the same block. This may cause 'tidal waves' of I/O whenever
+// such data ends up in the "old" group at once.
+//
+// After initialization, there will be fewer blocks in the "current"
+// group than configured, due to there simply being no data. This is
+// compensated by adding more blocks to the "new" group. Unlike the
+// regular blocks in this group, these will have a uniform placement
+// distribution that is twice as high as normal. This is done to ensure
+// the "current" blocks are randomly seeded to reduce 'tidal waves'
+// later on.
+//
+// The number of blocks in the "old" group should not be too low, as
+// this would cause this storage backend to become a FIFO instead of
+// being LRU-like. Setting it too high is also not recommended, as this
+// would increase redundancy in the data stored. The "current" group
+// should likely be two or three times as large as the "old" group.
+message LocalBlobAccessConfiguration {
+  // Was 'digest_location_map_size'. This option has been moved to
+  // 'key_location_map_in_memory.entries'.
+  reserved 1;
+
+  message KeyLocationMapInMemory {
+    // The key-location map is a hash table that is used by this storage
+    // backend to resolve digests to locations where data is stored.
+    // This option determines the size of this hash table. Because
+    // entries are small (about 64 bytes in size), it is recommended to
+    // make this map relatively large to reduce collisions.
+    //
+    // Recommended value: between 2 and 10 times the expected number of
+    // objects stored.
+    int64 entries = 1;
+  }
+
+  oneof key_location_map_backend {
+    // Store the key-location map in memory.
+    KeyLocationMapInMemory key_location_map_in_memory = 11;
+
+    // Store the key-location map on a block device. The size of the
+    // block device determines the number of entries stored.
+    buildbarn.configuration.blockdevice.Configuration
+        key_location_map_on_block_device = 12;
+  }
+
+  // The number of indices a Get() call on the key-location map may
+  // attempt to access. The lower the utilization rate of the
+  // key-location map, the lower this value may be set. For example, if
+  // the size of the key-location map is set in such a way that it is
+  // only utilized by 10% (factor 0.1), setting this field to 16 means
+  // there is only a 0.1^16 chance that inserting an entry prematurely
+  // displaces another object from storage.
+  //
+  // Recommended value: 8
+  uint32 key_location_map_maximum_get_attempts = 2;
+
+  // The number of mutations that a Put() on the key-location map may
+  // perform. Because the key-location map uses a scheme similar to
+  // Robin Hood hashing, insertions may cause other entries to be
+  // displaced. Those entries may then cause even more entries to be
+  // displaced. Because of that, it is recommended to set this field to
+  // a small multiple of the maximum Get() attempts.
+  //
+  // Recommended value: 32
+  int64 key_location_map_maximum_put_attempts = 3;
+
+  // The number of blocks, where attempting to access any data stored
+  // within will cause it to be refreshed (i.e., copied into new
+  // blocks).
+  //
+  // Setting the number of old blocks too low may cause builds to fail,
+  // due to data disappearing prematurely. Setting the number of old
+  // blocks too high may cause an excessive amount of duplication in the
+  // data set. For example, if old_blocks == current_blocks + new_blocks,
+  // there may be a redundancy in the data set up to a factor of two.
+  //
+  // Recommended value: 8
+  int32 old_blocks = 5;
+
+  // The number of blocks, where attempting to access data stored within
+  // will not cause data to be refreshed immediately. The containing
+  // block will first need to become old for data to be eligible for
+  // refreshes.
+  //
+  // Recommended value: 24
+  int32 current_blocks = 6;
+
+  // The number of blocks where new data needs to be written. It is
+  // valid to set this to just 1. Setting it to a slightly higher value
+  // has the advantage that frequently used objects will over time get
+  // smeared out across the data set. This spreads out the cost
+  // refreshing data from old to new blocks.
+  //
+  // Because the probability of storing objects in new blocks has an
+  // inverse exponential distribution, it is not recommended to set this
+  // to any value higher than 4. Whereas the first new block will at
+  // times be somewhere between 50% and 100% full, the fourth new block
+  // will only be between 6.25% and 12.5% full, which is wasteful.
+  //
+  // Setting this to any value other than 1 is only supported for the
+  // Content Addressable Storage (CAS). Other storage types such as the
+  // Action Cache (AC) need to support updates to existing objects,
+  // which can only be done reliably if new objects are written into a
+  // single block.
+  //
+  // Recommended value: 3 for the CAS, 1 for other storage types.
+  int32 new_blocks = 7;
+
+  // Was 'instances'. This field no longer needs to be provided, as this
+  // storage backend is now capable of storing entries for arbitrary
+  // instance names transparently.
+  reserved 8;
+
+  message BlocksInMemory {
+    // Data is stored in a list of blocks. The total number of blocks
+    // constant over time, with small fluctuations to deal with lingering
+    // requests when removing a block. This option sets the size of an
+    // individual block.
+    //
+    // Recommended value: (total space available) /
+    //                    (old_blocks + current_blocks + new_blocks)
+    int64 block_size_bytes = 1;
+  }
+
+  message BlocksOnBlockDevice {
+    // The block device where data needs to be stored.
+    buildbarn.configuration.blockdevice.Configuration source = 1;
+
+    // To deal with lingering read requests, a small number of old
+    // blocks may need to be retained for a short period of time before
+    // being recycled to store new data. This option determines how many
+    // of such lingering blocks are allocated.
+    //
+    // Unlike in-memory storage, where the block size is configured
+    // explicitly, block device backed storage automatically infers an
+    // optimal block size. The block size is equal to:
+    //
+    // block_size = (size of block device) /
+    //              (spare_blocks + old_blocks + current_blocks + new_blocks)
+    //
+    // Recommended value: 3
+    int32 spare_blocks = 2;
+
+    // When set, temporarily cache the integrity of data after it's been
+    // read from the block device. This is a requirement for being able
+    // to randomly access objects quickly.
+    //
+    // The disadvantage of enabling this option is that data corruption
+    // on the block device may not be detected. It is therefore
+    // recommended to set the cache duration to a limited value (e.g.,
+    // "4h").
+    buildbarn.configuration.digest.ExistenceCacheConfiguration
+        data_integrity_validation_cache = 3;
+  }
+
+  oneof blocks_backend {
+    // Store all data in memory. For larger setups, this may place a lot
+    // of pressure on Go's garbage collector. It may be necessary to
+    // reduce the value of GOGC to use this option reliably.
+    BlocksInMemory blocks_in_memory = 9;
+
+    // Store the blocks containing data on a block device.
+    BlocksOnBlockDevice blocks_on_block_device = 10;
+  }
+
+  message Persistent {
+    // Path to a directory on disk where metadata can be stored to be
+    // able to persist. This metadata needs to be reloaded on startup to
+    // be able to access previous data.
+    //
+    // This directory will hold a single file named "state", containing
+    // a Protobuf message of type
+    // buildbarn.blobstore.local.PersistentState. It is not recommended
+    // to use this directory for any purpose other than storing the
+    // persistent state file, as fsync() is called on it regularly.
+    string state_directory_path = 1;
+
+    // The amount of time between fsync() calls against the block device
+    // used to store blocks of data. Setting this option to a lower
+    // value reduces the amount of data that may get lost across
+    // restarts.
+    //
+    // This option acts as a lower bound on the amount of time between
+    // fsync() calls. No calls to fsync() are made if the system is
+    // idle, nor are multiple calls performed in parallel in case they
+    // take longer to complete than the configured interval.
+    //
+    // Care should be taken that this value is not set too low. Every
+    // epoch that still references valid data consumes 16 bytes of
+    // memory and increases the size of the state file by a similar
+    // amount. This means that if this option is set to '300s', epoch
+    // bookkeeping consumes up to 12*24*365*16 B = ~1.68 MB of space if
+    // the system were to operate for a full year without blocks being
+    // released. Setting this to '1s' blows this up by a factor 300.
+    //
+    // Recommended value: '300s'
+    google.protobuf.Duration minimum_epoch_interval = 2;
+  }
+
+  // When set, persist data across restarts. This feature is only
+  // available when both the key-location map and blocks are stored on a
+  // block device.
+  //
+  // When not set, data is not persisted. The data store will be empty
+  // every time the application is restarted. Existing entries in the
+  // key-location map and data in blocks will be ignored, even if their
+  // contents are valid.
+  Persistent persistent = 13;
+
+  // For all data stores except for the Content Addressable Storage
+  // (CAS), this storage backend always fully respects the REv2 instance
+  // name. This means that every instance name may store a separate copy
+  // of an object. Reads and writes are fully isolated.
+  //
+  // For the Content Addressable Storage, this option determines to what
+  // extent the instance name should be respected. When set to false,
+  // the instance name is completely ignored, meaning that all instance
+  // names share all objects. This is great from a performance point of
+  // view, as it means that users of multi-tenant setups need to upload
+  // objects less frequently, and that storage space usage is minimised.
+  // Unfortunately, it does mean that all tenants can access each
+  // other's objects once they get their hands on their digests.
+  //
+  // When this option is set to true, the instance name is respected in
+  // a hierarchical fashion. This means that if an object is written
+  // using instance name "foo/bar", it will be possible to read it using
+  // instance names "foo/bar", "foo/bar/baz", "foo/bar/baz/qux", but not
+  // instance names "", "foo", "foo/xyzzy". In other words, non-empty
+  // instance names will have Content Addressable Storage contents
+  // inherited from their parent instance names.
+  //
+  // This feature is implemented in such a way that object contents are
+  // still shared across all instance names. Enabling this option does
+  // not cause more data to be written into blocks, as uploads for
+  // objects that already exist under another instance name are treated
+  // as no-ops. It does cause at least a twofold increase in
+  // key-location map usage to track which instance name prefixes may
+  // access an object, proportional to the number of instance names
+  // used.
+  //
+  // This option is only supported for the Content Addressable Storage,
+  // as only for this data store it is safe to provide such behaviour at
+  // the individual storage node level. For the Action Cache, you may
+  // only want to do hierarchical instance name matching at a higher
+  // level, e.g., on top of CompletenessCheckingBlobAccess. This can be
+  // achieved by using HierarchicalInstanceNamesBlobAccess.
+  bool hierarchical_instance_names = 14;
+}
+
+message ExistenceCachingBlobAccessConfiguration {
+  // The backend for which results of
+  // ContentAddressableStorage.FindMissingBlobs() results need to be
+  // cached.
+  BlobAccessConfiguration backend = 1;
+
+  // Parameters for the cache data structure that is used by this
+  // decorator.
+  buildbarn.configuration.digest.ExistenceCacheConfiguration existence_cache =
+      2;
+}
+
+message ReadFallbackBlobAccessConfiguration {
+  // Backend from which data is attempted to be read first, and to which
+  // data is written.
+  BlobAccessConfiguration primary = 1;
+
+  // Backend from which data is attempted to be read last.
+  BlobAccessConfiguration secondary = 2;
+
+  // The replication strategy that should be used to copy objects from
+  // the secondary backend to the primary backend. If unset, objects
+  // will not be copied.
+  BlobReplicatorConfiguration replicator = 3;
+}
+
+message ReferenceExpandingBlobAccessConfiguration {
+  // The Indirect Content Addressable Storage (ICAS) backend from which
+  // Reference objects are loaded.
+  BlobAccessConfiguration indirect_content_addressable_storage = 1;
+
+  // Optional: AWS access options and credentials for objects loaded
+  // from S3.
+  buildbarn.configuration.cloud.aws.SessionConfiguration aws_session = 2;
+
+  // Optional: Options to be used by the HTTP client.
+  buildbarn.configuration.http.ClientConfiguration http_client = 3;
+}
+
+message BlobReplicatorConfiguration {
+  oneof mode {
+    // When blobs are only present in one backend, but not the other,
+    // they are copied by the client immediately.
+    //
+    // Because there is no orchestration between clients, this may for
+    // certain workloads cause multiple clients to all replicate the
+    // same objects. Especially for setups with many clients, this could
+    // put a lot of pressure on storage nodes.
+    //
+    // This strategy may still be acceptable for the Action Cache, even
+    // for larger setups. The Action Cache receives less load than the
+    // Content Addressable Storage. There is also a lower propbability
+    // of clients requesting the same object at around the same time.
+    // Action Cache objects also tend to be relatively small, meaning
+    // that little space and bandwidth is wasted when replicating
+    // objects unnecessarily.
+    google.protobuf.Empty local = 1;
+
+    // Instruct an external gRPC service (bb_replicator) to perform
+    // replications. This is advised for setups with a larger number of
+    // clients, as a centralized replicator process may deduplicate
+    // replication actions. This reduces the load on storage nodes.
+    //
+    // This strategy is only supported for the Content Addressable
+    // Storage.
+    buildbarn.configuration.grpc.ClientConfiguration remote = 2;
+
+    // Queue and deduplicate all replication operations prior to
+    // executing them.
+    //
+    // In setups with a high volume of requests, it may normally be
+    // unsafe to restart a non-persistent storage node. Once the storage
+    // node would come back online, it would succumb to traffic
+    // generated by clients to replicate missing data.
+    //
+    // By executing all replication operations sequentially, the amount
+    // of pressure placed on storage nodes is bounded. By letting a
+    // dedicated bb_replicator instance use this strategy, replication
+    // throughput is bounded globally.
+    //
+    // TODO: This backend shares some overlap with 'deduplicating' and
+    // 'concurrency_limiting'. Should it be removed in favor of those?
+    // Right now this backend is more efficient for remote sinks,
+    // because it doesn't decompose requests for multiple objects.
+    QueuedBlobReplicatorConfiguration queued = 3;
+
+    // No replication will be performed. This can be useful when one
+    // or more of the backends have their contents managed externally.
+    google.protobuf.Empty noop = 4;
+
+    // Ensure that blobs are not replicated redundantly. Replication
+    // requests for the same blob are merged. To deal with potential
+    // race conditions, double check whether the sink already contains a
+    // blob before copying.
+    //
+    // In order to guarantee responsiveness for all callers, this
+    // replicator decomposes requests for multiple blobs into one
+    // request per blob. To prevent callers from stalling the
+    // replication process, it also doesn't stream data back to the
+    // caller as it is being replicated. This means that blobs are fully
+    // replicated from the source to the sink, prior to letting the
+    // caller read the data from the sink at its own pace.
+    //
+    // This replicator has been designed to reduce the amount of traffic
+    // against the source to an absolute minimum, at the cost of
+    // generating more traffic against the sink. It is recommended to
+    // use this replicator when the sink is an instance of
+    // LocalBlobAccess that is embedded into the same process, and blobs
+    // are expected to be consumed locally.
+    BlobReplicatorConfiguration deduplicating = 5;
+
+    // Ensure that the total number of concurrent replication requests
+    // remains bounded by a constant. By limiting the number of
+    // concurrent requests issues against a source, network starvation
+    // may be prevented.
+    //
+    // If this replicator is used in combination with 'deduplicating',
+    // it is recommended that 'deduplicating' is placed on the outside.
+    // More concretely:
+    //
+    //     { deduplicating: { concurrencyLimiting: { ... } }
+    //
+    // Otherwise, the concurrency limit will be applied against requests
+    // that haven't been deduplicated yet, leading to lower concurrency.
+    ConcurrencyLimitingBlobReplicatorConfiguration concurrency_limiting = 6;
+  }
+}
+
+message QueuedBlobReplicatorConfiguration {
+  // Base replication strategy to which calls should be forwarded.
+  BlobReplicatorConfiguration base = 1;
+
+  // Parameters for the cache data structure that is used to incoming
+  // deduplicate replication operations.
+  buildbarn.configuration.digest.ExistenceCacheConfiguration existence_cache =
+      2;
+}
+
+message ConcurrencyLimitingBlobReplicatorConfiguration {
+  // Base replication strategy to which calls should be forwarded.
+  BlobReplicatorConfiguration base = 1;
+
+  // The maximum number of concurrent replication requests that are
+  // forwarded to the base replication strategy.
+  int64 maximum_concurrency = 2;
+}
+
+message DemultiplexingBlobAccessConfiguration {
+  // The instance name prefixes for which requests are forwarded.
+  map<string, DemultiplexedBlobAccessConfiguration> instance_name_prefixes = 1;
+}
+
+message DemultiplexedBlobAccessConfiguration {
+  // The backend to which requests are forwarded.
+  BlobAccessConfiguration backend = 1;
+
+  // Add a prefix to the instance name of all requests forwarded to this
+  // backend.
+  string add_instance_name_prefix = 2;
+}
+
+message ActionResultExpiringBlobAccessConfiguration {
+  // The backend to which requests are forwarded.
+  BlobAccessConfiguration backend = 1;
+
+  // The minimum amount of time to pass before an ActionResult expires.
+  google.protobuf.Duration minimum_validity = 2;
+
+  // Maximum amount of jitter to be added to the expiration time. This
+  // ensures that actions that were built at around the same time don't
+  // also expire at around the same time, therefore amortizing the rate
+  // at which actions are rebuilt.
+  //
+  // The process for computing the jitter is deterministic, meaning that
+  // subsequent requests for the same ActionResult still yield the same
+  // expiration time.
+  google.protobuf.Duration maximum_validity_jitter = 3;
+}
+
+message ReadCanaryingBlobAccessConfiguration {
+  // The backend that is the source of truth.
+  BlobAccessConfiguration source = 1;
+
+  // The backend that contains a read-only replica of the source.
+  BlobAccessConfiguration replica = 2;
+
+  // Size of the cache that is used to track the availability of the
+  // replica on a per REv2 instance name basis. This ensures that if the
+  // replica uses features authoriation and demultiplexing based on
+  // instance names, availability is tracked accurately.
+  //
+  // Recommended value: 256
+  int32 maximum_cache_size = 3;
+
+  // The validity duration of cache entries. This controls how much time
+  // may pass without any read traffic before the backend falls back to
+  // the default state.
+  //
+  // Recommended value: 300s
+  google.protobuf.Duration maximum_cache_duration = 4;
+}
+
+message ZIPBlobAccessConfiguration {
+  // Path of the ZIP file.
+  string path = 1;
+
+  // When set, temporarily cache the integrity of data after it's been
+  // read from the ZIP file. Once cached, uncompressed files in the ZIP
+  // file (i.e., ones stored with compression method STORE) may be
+  // randomly accessed quickly.
+  //
+  // The disadvantage of enabling this option is that data corruption in
+  // the ZIP file may not be detected. It is therefore recommended to
+  // set the cache duration to a limited value (e.g., "4h").
+  buildbarn.configuration.digest.ExistenceCacheConfiguration
+      data_integrity_validation_cache = 2;
+}
+
+message WithLabelsBlobAccessConfiguration {
+  // The backend that should be created, having access to the declared
+  // labels.
+  BlobAccessConfiguration backend = 1;
+
+  // A map of string labels to backends that can be referenced.
+  map<string, BlobAccessConfiguration> labels = 2;
+}

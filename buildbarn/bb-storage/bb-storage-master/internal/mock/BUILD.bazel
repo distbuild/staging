@@ -1,0 +1,312 @@
+# gazelle:ignore
+
+load("@bazel_gomock//:gomock.bzl", "gomock")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+gomock(
+    name = "aliases",
+    out = "aliases.go",
+    interfaces = [
+        "ReadCloser",
+        "RoundTripper",
+        "Writer",
+    ],
+    library = "//internal/mock/aliases",
+    package = "mock",
+)
+
+gomock(
+    name = "auth",
+    out = "auth.go",
+    interfaces = [
+        "Authorizer",
+    ],
+    library = "//pkg/auth",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore",
+    out = "blobstore.go",
+    interfaces = [
+        "BlobAccess",
+        "DemultiplexedBlobAccessGetter",
+        "ReadBufferFactory",
+        "ReadWriterAt",
+    ],
+    library = "//pkg/blobstore",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore_local",
+    out = "blobstore_local.go",
+    interfaces = [
+        "Block",
+        "BlockAllocator",
+        "BlockList",
+        "BlockListPutFinalizer",
+        "BlockListPutWriter",
+        "BlockPutWriter",
+        "BlockReferenceResolver",
+        "DataSyncer",
+        "KeyBlobGetter",
+        "KeyBlobMap",
+        "KeyBlobPutFinalizer",
+        "KeyBlobPutWriter",
+        "KeyLocationMap",
+        "LocationBlobGetter",
+        "LocationBlobMap",
+        "LocationBlobPutFinalizer",
+        "LocationBlobPutWriter",
+        "LocationRecordArray",
+        "PersistentStateSource",
+        "PersistentStateStore",
+    ],
+    library = "//pkg/blobstore/local",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore_replication",
+    out = "blobstore_replication.go",
+    interfaces = ["BlobReplicator"],
+    library = "//pkg/blobstore/replication",
+    package = "mock",
+)
+
+gomock(
+    name = "blobstore_sharding",
+    out = "blobstore_sharding.go",
+    interfaces = ["ShardPermuter"],
+    library = "//pkg/blobstore/sharding",
+    package = "mock",
+)
+
+gomock(
+    name = "blockdevice",
+    out = "blockdevice.go",
+    interfaces = ["BlockDevice"],
+    library = "//pkg/blockdevice",
+    package = "mock",
+)
+
+gomock(
+    name = "buffer",
+    out = "buffer.go",
+    interfaces = [
+        "ChunkReader",
+        "DataIntegrityCallback",
+        "ErrorHandler",
+        "ReadAtCloser",
+    ],
+    library = "//pkg/blobstore/buffer",
+    package = "mock",
+)
+
+gomock(
+    name = "builder",
+    out = "builder.go",
+    interfaces = [
+        "BuildQueue",
+        "DemultiplexedBuildQueueGetter",
+    ],
+    library = "//pkg/builder",
+    package = "mock",
+)
+
+gomock(
+    name = "capabilities",
+    out = "capabilities.go",
+    interfaces = ["Provider"],
+    library = "//pkg/capabilities",
+    mock_names = {"Provider": "MockCapabilitiesProvider"},
+    package = "mock",
+)
+
+gomock(
+    name = "clock",
+    out = "clock.go",
+    interfaces = [
+        "Clock",
+        "Timer",
+    ],
+    library = "//pkg/clock",
+    package = "mock",
+)
+
+gomock(
+    name = "cloud_aws",
+    out = "cloud_aws.go",
+    interfaces = ["S3Client"],
+    library = "//pkg/cloud/aws",
+    package = "mock",
+)
+
+gomock(
+    name = "digest",
+    out = "digest.go",
+    interfaces = ["InstanceNameMatcher"],
+    library = "//pkg/digest",
+    package = "mock",
+)
+
+gomock(
+    name = "filesystem",
+    out = "filesystem.go",
+    interfaces = [
+        "Directory",
+        "FileAppender",
+        "FileReader",
+        "FileReadWriter",
+    ],
+    library = "//pkg/filesystem",
+    package = "mock",
+)
+
+gomock(
+    name = "filesystem_path",
+    out = "filesystem_path.go",
+    interfaces = [
+        "ComponentWalker",
+        "ScopeWalker",
+    ],
+    library = "//pkg/filesystem/path",
+    package = "mock",
+)
+
+gomock(
+    name = "grpc",
+    out = "grpc.go",
+    interfaces = [
+        "Authenticator",
+        "ClientDialer",
+        "ClientFactory",
+    ],
+    library = "//pkg/grpc",
+    package = "mock",
+)
+
+gomock(
+    name = "grpc_go",
+    out = "grpc_go.go",
+    interfaces = [
+        "ClientConnInterface",
+        "ClientStream",
+        "ServerStream",
+        "StreamHandler",
+        "Streamer",
+        "UnaryHandler",
+        "UnaryInvoker",
+    ],
+    library = "@org_golang_google_grpc//:grpc",
+    package = "mock",
+)
+
+gomock(
+    name = "jwt",
+    out = "jwt.go",
+    interfaces = [
+        "SignatureGenerator",
+        "SignatureValidator",
+    ],
+    library = "//pkg/jwt",
+    package = "mock",
+)
+
+gomock(
+    name = "redis",
+    out = "redis.go",
+    interfaces = ["RedisClient"],
+    library = "//pkg/blobstore",
+    package = "mock",
+)
+
+gomock(
+    name = "remoteexecution",
+    out = "remoteexecution.go",
+    interfaces = [
+        "Execution_ExecuteServer",
+        "Execution_WaitExecutionServer",
+    ],
+    library = "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+    package = "mock",
+)
+
+gomock(
+    name = "trace",
+    out = "trace.go",
+    interfaces = [
+        "Span",
+        "Tracer",
+        "TracerProvider",
+    ],
+    library = "@io_opentelemetry_go_otel_trace//:trace",
+    package = "mock",
+)
+
+gomock(
+    name = "util",
+    out = "util.go",
+    interfaces = [
+        "ErrorLogger",
+        "UUIDGenerator",
+    ],
+    library = "//pkg/util",
+    package = "mock",
+)
+
+go_library(
+    name = "mock",
+    srcs = [
+        ":aliases.go",
+        ":auth.go",
+        ":blobstore.go",
+        ":blobstore_local.go",
+        ":blobstore_replication.go",
+        ":blobstore_sharding.go",
+        ":blockdevice.go",
+        ":buffer.go",
+        ":builder.go",
+        ":capabilities.go",
+        ":clock.go",
+        ":cloud_aws.go",
+        ":digest.go",
+        ":filesystem.go",
+        ":filesystem_path.go",
+        ":grpc.go",
+        ":grpc_go.go",
+        ":jwt.go",
+        ":redis.go",
+        ":remoteexecution.go",
+        ":trace.go",
+        ":util.go",
+    ],
+    importpath = "github.com/buildbarn/bb-storage/internal/mock",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//pkg/blobstore",
+        "//pkg/blobstore/buffer",
+        "//pkg/blobstore/local",
+        "//pkg/blobstore/sharding",
+        "//pkg/builder",
+        "//pkg/clock",
+        "//pkg/digest",
+        "//pkg/filesystem",
+        "//pkg/filesystem/path",
+        "//pkg/proto/blobstore/local",
+        "//pkg/proto/configuration/grpc",
+        "//pkg/util",
+        "@com_github_aws_aws_sdk_go_v2_service_s3//:s3",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_golang_mock//gomock",
+        "@com_github_google_uuid//:uuid",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)

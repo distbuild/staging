@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "eviction",
+    srcs = [
+        "configuration.go",
+        "fifo_set.go",
+        "lru_set.go",
+        "metrics_set.go",
+        "rr_set.go",
+        "set.go",
+    ],
+    importpath = "github.com/buildbarn/bb-storage/pkg/eviction",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/eviction",
+        "//pkg/random",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "eviction_test",
+    srcs = [
+        "fifo_set_test.go",
+        "lru_set_test.go",
+        "rr_set_test.go",
+    ],
+    deps = [
+        ":eviction",
+        "@com_github_stretchr_testify//require",
+    ],
+)

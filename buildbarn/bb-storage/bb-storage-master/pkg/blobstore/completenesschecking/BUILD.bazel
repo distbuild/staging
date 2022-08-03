@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "completenesschecking",
+    srcs = ["completeness_checking_blob_access.go"],
+    importpath = "github.com/buildbarn/bb-storage/pkg/blobstore/completenesschecking",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/blobstore",
+        "//pkg/blobstore/buffer",
+        "//pkg/digest",
+        "//pkg/util",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "completenesschecking_test",
+    srcs = ["completeness_checking_blob_access_test.go"],
+    deps = [
+        ":completenesschecking",
+        "//internal/mock",
+        "//pkg/blobstore/buffer",
+        "//pkg/digest",
+        "//pkg/testutil",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_golang_mock//gomock",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

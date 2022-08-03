@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "path",
+    srcs = [
+        "absolute_scope_walker.go",
+        "builder.go",
+        "component.go",
+        "component_walker.go",
+        "components_list.go",
+        "loop_detecting_scope_walker.go",
+        "relative_scope_walker.go",
+        "resolve.go",
+        "scope_walker.go",
+        "trace.go",
+        "virtual_root_scope_walker_factory.go",
+        "void_component_walker.go",
+        "void_scope_walker.go",
+    ],
+    importpath = "github.com/buildbarn/bb-storage/pkg/filesystem/path",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/util",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "path_test",
+    srcs = [
+        "absolute_scope_walker_test.go",
+        "builder_test.go",
+        "component_test.go",
+        "loop_detecting_scope_walker_test.go",
+        "relative_scope_walker_test.go",
+        "resolve_test.go",
+        "trace_test.go",
+        "virtual_root_scope_walker_factory_test.go",
+    ],
+    deps = [
+        ":path",
+        "//internal/mock",
+        "@com_github_golang_mock//gomock",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

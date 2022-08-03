@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package buildbarn.configuration.grpc;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "pkg/proto/configuration/jwt/jwt.proto";
+import "pkg/proto/configuration/tls/tls.proto";
+
+option go_package = "github.com/buildbarn/bb-storage/pkg/proto/configuration/grpc";
+
+message ClientConfiguration {
+  // Address of the gRPC server to which to connect. This string may be
+  // in the form of "address:port" or "unix:///path/of/unix/socket".
+  string address = 1;
+
+  // TLS configuration. TLS is not enabled when left unset.
+  buildbarn.configuration.tls.ClientConfiguration tls = 2;
+
+  // Keepalive messages for point-to-point healthchecking. Keepalive
+  // is not enabled when left unset.
+  //
+  // WARNING: When enabling this option, please make sure that
+  // keepalive_enforcement_policy is set on the server with a
+  // configuration that permits these keepalives. Failure to do this
+  // will result in "transport is closing" errors being returned to
+  // the client. The default server configuration is unlikely to be
+  // correct.
+  ClientKeepaliveConfiguration keepalive = 3;
+
+  // Was forward_metadata, folded into add_metadata_jmespath_expression.
+  // For instance, to forward the `authorization` header, you would use the
+  // expression:
+  //
+  // {"authorization": incomingGRPCMetadata.authorization}
+  //
+  // Incoming metadata names containing dots must be quoted, e.g.
+  //
+  // {"build.bazel.remote.execution.v2.requestmetadata-bin":
+  //     incomingGRPCMetadata."build.bazel.remote.execution.v2.requestmetadata-bin"}
+  reserved 4;
+
+  message HeaderValues {
+    string header = 1;
+    repeated string values = 2;
+  }
+
+  // Map of gRPC metadata headers to set in client connection.
+  // Header names must be lower case.
+  // TODO: Remove this and replace it with uses of
+  //  add_metadata_jmespath_expression.
+  repeated HeaderValues add_metadata = 5;
+
+  // JMESPath expression used to add headers to outgoing requests.
+  // The JMESPath should evaluate to a map<string, repeated string> with keys
+  // representing header names and values the header values.
+  //
+  // Header names must be lower case.
+  //
+  // The JMESPath expression is called against a JSON object with the following
+  // structure:
+  //
+  //  {
+  //      "authenticationMetadata": value,
+  //      "incomingGRPCMetadata": map<string, repeated string>
+  //  }
+  //
+  // authenticationMetadata must only contain primitive JSON-compatible types
+  // (string, bool, int, float), slices, or maps with type
+  // map[string]interface{}.
+  // Note that structs, pointers, and maps with different types
+  // (e.g. map[string]string) are not supported.
+  //
+  // Some known headers that may be expected in incomingGRPCMetadata:
+  //
+  // - "authorization":
+  //   The bearer token (e.g. an OAuth2 access token) of the client.
+  // - "build.bazel.remote.execution.v2.requestmetadata-bin":
+  //   build.bazel.remote.execution.v2.RequestMetadata Protobuf message
+  //   provided by the client that contains the name of the build tool,
+  //   its version number and information about the target being built.
+  // - "user-agent":
+  //   Name and version of the low-level transport library used by the
+  //   client.
+  //
+  // Note: Keep in mind that this option can only be used to send
+  // metadata to outgoing calls on gRPC clients.
+  // This means that this option cannot be used to let
+  // bb-scheduler forward client provided credentials to workers. That
+  // would only be possible if bb-scheduler made outgoing connections to
+  // workers, which is not the case.
+  string add_metadata_jmespath_expression = 12;
+
+  // Oauth authentication settings. More information:
+  // https://grpc.io/docs/guides/auth/
+  ClientOAuthConfiguration oauth = 6;
+
+  // Was 'forward_and_reuse_metadata'. This option has been moved to
+  // 'global.grpc_forward_and_reuse_metadata', so that headers are
+  // attached to all gRPC clients.
+  reserved 7;
+
+  // The gRPC connection's initial stream window size.  See grpc-go
+  // WithInitialWindowSize
+  int32 initial_window_size_bytes = 8;
+
+  // The gRPC connection's initial connection window size.  See grpc-go
+  // WithInitialConnWindowSize
+  int32 initial_conn_window_size_bytes = 9;
+
+  // If set, forward all traffic through a proxy with a given URL.
+  string proxy_url = 10;
+
+  // Add fields contained in Protobuf request and response messages as
+  // attributes of OpenTelemetry trace spans. The key of this map
+  // corresponds to the full gRPC method name. Examples of valid names
+  // include:
+  //
+  // /build.bazel.remote.execution.v2.ActionCache/UpdateActionResult
+  // /build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs
+  // /build.bazel.remote.execution.v2.Execution/Execute
+  // /google.bytestream.ByteStream/Read
+  map<string, TracingMethodConfiguration> tracing = 11;
+}
+
+message ClientKeepaliveConfiguration {
+  // Amount of time without server activity that should pass before the
+  // client starts sending keepalive requests.
+  google.protobuf.Duration time = 1;
+
+  // Amount of time the server may take to respond to keepalive
+  // requests.
+  google.protobuf.Duration timeout = 2;
+
+  // Whether the client should send keepalive requests even if no RPC
+  // activity is taking place.
+  bool permit_without_stream = 3;
+}
+
+message ClientOAuthConfiguration {
+  oneof credentials {
+    // Use default Google credentials. More information:
+    // https://developers.google.com/accounts/docs/application-default-credentials
+    google.protobuf.Empty google_default_credentials = 1;
+
+    // Service account private key to use to obtain access token.
+    string service_account_key = 2;
+  }
+
+  // OAuth scopes. More information:
+  // https://developers.google.com/identity/protocols/oauth2/scopes
+  repeated string scopes = 3;
+}
+
+message ServerConfiguration {
+  // Network addresses on which to listen (e.g., ":8980").
+  repeated string listen_addresses = 1;
+
+  // UNIX socket paths on which to listen (e.g., "/var/run/runner/grpc").
+  //
+  // NOTE: No facilities are provided to set the ownership or
+  // permissions on the socket file. On most operating systems, the
+  // socket file will have mode 0777. How the mode is interpreted when
+  // changed is inconsistent between operating systems. Some require the
+  // socket to be writable in order to connect, while others ignore the
+  // permissions altogether.
+  //
+  // It is therefore strongly advised that socket files are placed
+  // inside directories that have access controls set up properly.
+  repeated string listen_paths = 2;
+
+  // TLS configuration. TLS is not enabled when left unset.
+  buildbarn.configuration.tls.ServerConfiguration tls = 3;
+
+  // Policy for authenticating clients against the gRPC server.
+  //
+  // Each authentication policy yields a JSON-like authentication
+  // metadata object that is passed on to the authorization layer. The
+  // authentication metadata may be used to store the username or sets
+  // of permissions.
+  AuthenticationPolicy authentication_policy = 4;
+
+  // Maximum size of a Protobuf message that may be received by this
+  // server.
+  int64 maximum_received_message_size_bytes = 5;
+
+  // Policy for allowing clients to send messages for point-to-point
+  // healthchecking. The default policy is used if this field is
+  // unset, which currently sets min_time to 5 minutes and
+  // permit_without_stream to false.
+  ServerKeepaliveEnforcementPolicy keepalive_enforcement_policy = 6;
+
+  // Service name for health check requests. The gRPC server will
+  // report itself healthy for this service via the grpc.health.v1
+  // protocol.
+  string health_check_service = 7;
+
+  // The gRPC connection's initial stream window size.  See grpc-go
+  // InitialWindowSize
+  int32 initial_window_size_bytes = 8;
+
+  // The gRPC connection's initial connection window size.  See grpc-go
+  // InitialConnWindowSize
+  int32 initial_conn_window_size_bytes = 9;
+
+  // Add fields contained in Protobuf request and response messages as
+  // attributes of OpenTelemetry trace spans. The key of this map
+  // corresponds to the full gRPC method name. Examples of valid names
+  // include:
+  //
+  // /build.bazel.remote.execution.v2.ActionCache/UpdateActionResult
+  // /build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs
+  // /build.bazel.remote.execution.v2.Execution/Execute
+  // /google.bytestream.ByteStream/Read
+  map<string, TracingMethodConfiguration> tracing = 10;
+}
+
+message ServerKeepaliveEnforcementPolicy {
+  // The minimum amount of time a client should wait before sending a
+  // keepalive ping.
+  google.protobuf.Duration min_time = 1;
+
+  // If true, server allows keepalive pings even when there are no
+  // active streams (RPCs). If false, and client sends ping when there
+  // are no active streams, server will send GOAWAY and close the
+  // connection.
+  bool permit_without_stream = 2;
+}
+
+message AuthenticationPolicy {
+  oneof policy {
+    // Allow all incoming requests.
+    //
+    // The value of this field is used as authentication metadata in
+    // literal form.
+    google.protobuf.Value allow = 1;
+
+    // Allow incoming requests if one of multiple authentication
+    // policies allows it, similar to Python's any() function.
+    //
+    // The authentication metadata of the first matching policy is used.
+    AnyAuthenticationPolicy any = 2;
+
+    // Deny all incoming requests, returning a fixed error message back
+    // to the client.
+    string deny = 3;
+
+    // Allow incoming requests in case they present a valid TLS
+    // certificate.
+    TLSClientCertificateAuthenticationPolicy tls_client_certificate = 4;
+
+    // Allow incoming requests in case they present an "Authorization"
+    // header containing a JWT bearer token.
+    buildbarn.configuration.jwt.AuthorizationHeaderParserConfiguration jwt = 5;
+  }
+}
+
+message AnyAuthenticationPolicy {
+  // Set of backing authentication policies.
+  repeated AuthenticationPolicy policies = 1;
+}
+
+message TLSClientCertificateAuthenticationPolicy {
+  // PEM data for the certificate authorities that should be used to
+  // validate the remote TLS client.
+  string client_certificate_authorities = 1;
+
+  // Authentication metadata to use.
+  //
+  // TODO: Provide a way to transform fields in the client certificate
+  // to authentication metadata.
+  google.protobuf.Value metadata = 2;
+}
+
+message TracingMethodConfiguration {
+  // Names of fields to extract from the request message of an RPC, and
+  // convert into trace span attributes. The resulting attributes will
+  // have "request." prepended to their names. If the RPC is client
+  // streaming, the value is extracted from the first message.
+  //
+  // Lookups are performed against the names used in the Protobuf
+  // schema; not the Protobuf JSON encoding. Nested fields can be
+  // accessed by using "." as a separator. It is only valid to refer to
+  // fields that use boolean, enumeration, floating point, signed
+  // integer or string types. Fields may be singular or repeated, but
+  // not maps.
+  //
+  // For example, using value "action_digest.hash" for RPC method
+  // "build.bazel.remote.execution.v2.ActionCache/GetActionResult" will
+  // cause attribute "request.action_digest.hash" to be attached to the
+  // trace span, being of type string, containing the value of
+  // Digest.hash, contained in the GetActionResultRequest.action_digest.
+  //
+  // Attributes will not be attached to trace spans if one of the parent
+  // messages of the field that is referenced is not set.
+  repeated string attributes_from_first_request_message = 1;
+
+  // Names of fields to extract from the response message of an RPC, and
+  // convert into trace span attributes. The resulting attributes will
+  // have "response." prepended to their names. If the RPC is server
+  // streaming, the value is extracted from the first message.
+  //
+  // Lookups are performed using the same rules as those for
+  // 'attributes_from_first_request_message'.
+  repeated string attributes_from_first_response_message = 2;
+}

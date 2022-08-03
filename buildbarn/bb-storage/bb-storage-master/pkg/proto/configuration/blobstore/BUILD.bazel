@@ -1,0 +1,43 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+
+proto_library(
+    name = "blobstore_proto",
+    srcs = ["blobstore.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/blockdevice:blockdevice_proto",
+        "//pkg/proto/configuration/cloud/aws:aws_proto",
+        "//pkg/proto/configuration/digest:digest_proto",
+        "//pkg/proto/configuration/grpc:grpc_proto",
+        "//pkg/proto/configuration/http:http_proto",
+        "//pkg/proto/configuration/tls:tls_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+go_proto_library(
+    name = "blobstore_go_proto",
+    importpath = "github.com/buildbarn/bb-storage/pkg/proto/configuration/blobstore",
+    proto = ":blobstore_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/blockdevice",
+        "//pkg/proto/configuration/cloud/aws",
+        "//pkg/proto/configuration/digest",
+        "//pkg/proto/configuration/grpc",
+        "//pkg/proto/configuration/http",
+        "//pkg/proto/configuration/tls",
+        "@go_googleapis//google/rpc:status_go_proto",
+    ],
+)
+
+go_library(
+    name = "blobstore",
+    embed = [":blobstore_go_proto"],
+    importpath = "github.com/buildbarn/bb-storage/pkg/proto/configuration/blobstore",
+    visibility = ["//visibility:public"],
+)

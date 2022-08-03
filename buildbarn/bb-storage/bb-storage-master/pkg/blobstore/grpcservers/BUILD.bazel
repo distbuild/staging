@@ -1,0 +1,53 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpcservers",
+    srcs = [
+        "action_cache_server.go",
+        "byte_stream_server.go",
+        "content_addressable_storage_server.go",
+        "indirect_content_addressable_storage_server.go",
+        "initial_size_class_cache_server.go",
+    ],
+    importpath = "github.com/buildbarn/bb-storage/pkg/blobstore/grpcservers",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/blobstore",
+        "//pkg/blobstore/buffer",
+        "//pkg/digest",
+        "//pkg/proto/icas",
+        "//pkg/proto/iscc",
+        "//pkg/util",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+go_test(
+    name = "grpcservers_test",
+    srcs = [
+        "byte_stream_server_test.go",
+        "content_addressable_storage_server_test.go",
+        "indirect_content_addressable_storage_server_test.go",
+    ],
+    deps = [
+        ":grpcservers",
+        "//internal/mock",
+        "//pkg/blobstore/buffer",
+        "//pkg/digest",
+        "//pkg/proto/icas",
+        "//pkg/testutil",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_golang_mock//gomock",
+        "@com_github_stretchr_testify//require",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)

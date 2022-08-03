@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "util",
+    srcs = [
+        "buckets.go",
+        "error_logger.go",
+        "jsonnet.go",
+        "status.go",
+        "tls.go",
+        "uuid.go",
+    ],
+    importpath = "github.com/buildbarn/bb-storage/pkg/util",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/proto/configuration/tls",
+        "@com_github_google_go_jsonnet//:go-jsonnet",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "util_test",
+    srcs = [
+        "buckets_test.go",
+        "tls_test.go",
+    ],
+    deps = [
+        ":util",
+        "//pkg/proto/configuration/tls",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
